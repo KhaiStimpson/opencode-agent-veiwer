@@ -9,13 +9,24 @@ import {
   Table,
   Divider,
   ThemeIcon,
+  Collapse,
+  UnstyledButton,
+  ScrollArea,
+  Code,
 } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { AreaChart } from "@mantine/charts";
 import {
   Brain,
   ArrowsClockwise,
   Lightning,
   Warning,
+  User,
+  Robot,
+  CaretDown,
+  CaretRight,
+  Wrench,
+  Scissors,
 } from "@phosphor-icons/react";
 import { formatTokens } from "../lib/opencode";
 import { getModelLimits } from "../hooks/useProviders";
@@ -252,8 +263,284 @@ function buildChartData(
 }
 
 // ---------------------------------------------------------------------------
-// Utilization color
+// Context Contents helpers
 // ---------------------------------------------------------------------------
+
+/** Truncate a string to maxLen chars, appending ellipsis if needed. */
+function truncate(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen) + "…";
+}
+
+interface ContextMessageRowProps {
+  msg: MessageWithParts;
+  index: number;
+  contextLimit: number;
+}
+
+/** A single collapsed/expandable message row inside the context viewer. */
+function ContextMessageRow({
+  msg,
+  index,
+  contextLimit,
+}: ContextMessageRowProps) {
+  const [open, { toggle }] = useDisclosure(false);
+  const isUser = msg.info.role === "user";
+  const isAssistant = msg.info.role === "assistant";
+
+  // Gather text parts, compaction parts, tool parts
+  const textParts = msg.parts.filter((p) => p.type === "text");
+  const toolParts = msg.parts.filter((p) => p.type === "tool");
+  const compactionParts = msg.parts.filter((p) => p.type === "compaction");
+  const stepFinishParts = msg.parts.filter((p) => p.type === "step-finish");
+
+  // Build a short summary line
+  const firstText = textParts[0];
+  const previewText =
+    firstText?.type === "text" && firstText.text
+      ? truncate(firstText.text.trim().replace(/\n+/g, " "), 120)
+      : "";
+
+  // Token info for assistant messages
+  const contextSize =
+    isAssistant && msg.info.role === "assistant"
+      ? msg.info.tokens.input +
+        msg.info.tokens.cache.read +
+        msg.info.tokens.cache.write
+      : 0;
+  const utilizationPct =
+    contextLimit > 0 && contextSize > 0
+      ? Math.min((contextSize / contextLimit) * 100, 100)
+      : 0;
+
+  const borderColor = isUser
+    ? "var(--mantine-color-blue-6)"
+    : compactionParts.length > 0
+      ? "var(--mantine-color-orange-6)"
+      : "var(--mantine-color-green-6)";
+
+  return (
+    <Paper
+      withBorder
+      radius="sm"
+      style={{ borderLeft: `3px solid ${borderColor}` }}
+    >
+      {/* Header row — always visible */}
+      <UnstyledButton onClick={toggle} w="100%">
+        <Group px="sm" py="xs" justify="space-between" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+            {open ? <CaretDown size={13} /> : <CaretRight size={13} />}
+            {isUser ? (
+              <User size={14} weight="bold" />
+            ) : (
+              <Robot size={14} weight="bold" />
+            )}
+            <Badge size="xs" variant="light" color={isUser ? "blue" : "green"}>
+              {isUser ? "User" : "Assistant"}
+            </Badge>
+            {isAssistant && msg.info.role === "assistant" && (
+              <Badge size="xs" variant="outline" color="gray">
+                {msg.info.providerID}/{msg.info.modelID}
+              </Badge>
+            )}
+            {compactionParts.length > 0 && (
+              <Badge size="xs" variant="light" color="orange">
+                compacted
+              </Badge>
+            )}
+            {toolParts.length > 0 && (
+              <Badge size="xs" variant="light" color="gray">
+                <Group gap={3} wrap="nowrap">
+                  <Wrench size={10} />
+                  {toolParts.length}
+                </Group>
+              </Badge>
+            )}
+            <Text
+              size="xs"
+              c="dimmed"
+              truncate
+              style={{ flex: 1, minWidth: 0 }}
+            >
+              {previewText}
+            </Text>
+          </Group>
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            {isAssistant && contextSize > 0 && (
+              <Text size="xs" c="dimmed">
+                {formatTokens(contextSize)}
+                {utilizationPct > 0 && (
+                  <Text
+                    span
+                    size="xs"
+                    c={getUtilizationColor(utilizationPct)}
+                  >
+                    {" "}
+                    ({utilizationPct.toFixed(1)}%)
+                  </Text>
+                )}
+              </Text>
+            )}
+            <Text size="xs" c="dimmed">
+              #{index + 1}
+            </Text>
+          </Group>
+        </Group>
+      </UnstyledButton>
+
+      {/* Expanded body */}
+      <Collapse expanded={open}>
+        <Divider />
+        <Stack gap="xs" px="sm" py="xs">
+          {/* Text parts */}
+          {textParts.map((p) =>
+            p.type === "text" ? (
+              <Text
+                key={p.id}
+                size="xs"
+                c={p.ignored ? "dimmed" : undefined}
+                style={{
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  opacity: p.ignored ? 0.5 : 1,
+                  fontStyle: p.synthetic ? "italic" : undefined,
+                }}
+              >
+                {p.ignored && (
+                  <Badge
+                    size="xs"
+                    color="gray"
+                    variant="outline"
+                    mr={4}
+                  >
+                    ignored
+                  </Badge>
+                )}
+                {p.synthetic && (
+                  <Badge
+                    size="xs"
+                    color="gray"
+                    variant="outline"
+                    mr={4}
+                  >
+                    synthetic
+                  </Badge>
+                )}
+                {p.text}
+              </Text>
+            ) : null
+          )}
+
+          {/* Compaction marker */}
+          {compactionParts.map((p) =>
+            p.type === "compaction" ? (
+              <Group key={p.id} gap="xs" wrap="nowrap">
+                <Scissors size={13} color="var(--mantine-color-orange-6)" />
+                <Text size="xs" c="orange">
+                  Context compacted ({p.auto ? "automatic" : "manual"}) —
+                  earlier messages were summarized and removed.
+                </Text>
+              </Group>
+            ) : null
+          )}
+
+          {/* Tool calls summary */}
+          {toolParts.length > 0 && (
+            <Stack gap={4}>
+              {toolParts.map((p) => {
+                if (p.type !== "tool") return null;
+                const state = p.state;
+                const isCompleted = state.status === "completed";
+                const isError = state.status === "error";
+                return (
+                  <Paper key={p.id} p="xs" withBorder radius="sm">
+                    <Group gap="xs" justify="space-between" wrap="nowrap">
+                      <Group gap="xs" wrap="nowrap">
+                        <Wrench
+                          size={12}
+                          color={
+                            isError
+                              ? "var(--mantine-color-red-6)"
+                              : isCompleted
+                                ? "var(--mantine-color-teal-6)"
+                                : "var(--mantine-color-gray-6)"
+                          }
+                        />
+                        <Text size="xs" fw={500}>
+                          {p.tool}
+                        </Text>
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          color={
+                            isError ? "red" : isCompleted ? "teal" : "gray"
+                          }
+                        >
+                          {state.status}
+                        </Badge>
+                        {isCompleted && state.time?.compacted && (
+                          <Badge size="xs" variant="outline" color="orange">
+                            output compacted
+                          </Badge>
+                        )}
+                      </Group>
+                    </Group>
+                    {/* Tool input snippet */}
+                    {state.status !== "pending" && "input" in state && state.input && (
+                      <Code
+                        block
+                        mt={4}
+                        style={{ fontSize: 11, maxHeight: 80, overflow: "auto" }}
+                      >
+                        {truncate(JSON.stringify(state.input, null, 2), 300)}
+                      </Code>
+                    )}
+                    {/* Tool output snippet */}
+                    {isCompleted && "output" in state && state.output && (
+                      <Code
+                        block
+                        mt={4}
+                        color="teal"
+                        style={{ fontSize: 11, maxHeight: 100, overflow: "auto" }}
+                      >
+                        {truncate(
+                          typeof state.output === "string"
+                            ? state.output
+                            : JSON.stringify(state.output, null, 2),
+                          400,
+                        )}
+                      </Code>
+                    )}
+                  </Paper>
+                );
+              })}
+            </Stack>
+          )}
+
+          {/* Step-finish token detail */}
+          {stepFinishParts.length > 0 && (
+            <Group gap={4} wrap="wrap">
+              <Lightning
+                size={12}
+                color="var(--mantine-color-teal-6)"
+              />
+              {stepFinishParts.map((p) =>
+                p.type === "step-finish" ? (
+                  <Badge key={p.id} size="xs" variant="light" color="teal">
+                    step: {formatTokens(p.tokens.input)} in /{" "}
+                    {formatTokens(p.tokens.output)} out
+                  </Badge>
+                ) : null
+              )}
+            </Group>
+          )}
+        </Stack>
+      </Collapse>
+    </Paper>
+  );
+}
+
+
 
 function getUtilizationColor(pct: number): string {
   if (pct >= 90) return "red";
@@ -621,6 +908,79 @@ export function ContextWindow({
           </Table>
         </Paper>
       )}
+
+      {/* ---- Context Contents Expander ---- */}
+      <ContextContentsExpander
+        messages={messages}
+        contextLimit={contextLimit}
+      />
     </Stack>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Context Contents expander (placed after ContextWindow to avoid hoisting
+// issues with ContextMessageRow which is defined above)
+// ---------------------------------------------------------------------------
+
+interface ContextContentsExpanderProps {
+  messages: MessageWithParts[];
+  contextLimit: number;
+}
+
+function ContextContentsExpander({
+  messages,
+  contextLimit,
+}: ContextContentsExpanderProps) {
+  const [open, { toggle }] = useDisclosure(false);
+
+  // Only show messages that have some visible content
+  const visibleMessages = messages.filter(
+    (m) =>
+      m.parts.some(
+        (p) => p.type === "text" || p.type === "tool" || p.type === "compaction",
+      ) || m.info.role === "user",
+  );
+
+  if (visibleMessages.length === 0) return null;
+
+  return (
+    <Paper withBorder radius="sm">
+      <UnstyledButton onClick={toggle} w="100%">
+        <Group px="md" py="sm" justify="space-between" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap">
+            {open ? <CaretDown size={14} /> : <CaretRight size={14} />}
+            <ThemeIcon size="sm" variant="light" color="indigo" radius="xl">
+              <Brain size={14} weight="fill" />
+            </ThemeIcon>
+            <Text size="sm" fw={600}>
+              Context Contents
+            </Text>
+            <Badge size="xs" variant="light" color="indigo">
+              {visibleMessages.length} messages in context
+            </Badge>
+          </Group>
+          <Text size="xs" c="dimmed">
+            {open ? "collapse" : "expand"}
+          </Text>
+        </Group>
+      </UnstyledButton>
+
+      <Collapse expanded={open}>
+        <Divider />
+        <ScrollArea.Autosize mah={600} px="sm" py="sm">
+          <Stack gap="xs">
+            {visibleMessages.map((msg, i) => (
+              <ContextMessageRow
+                key={msg.info.id}
+                msg={msg}
+                index={i}
+                contextLimit={contextLimit}
+              />
+            ))}
+          </Stack>
+        </ScrollArea.Autosize>
+      </Collapse>
+    </Paper>
   );
 }
