@@ -58,9 +58,27 @@ interface StepTokenInfo {
 }
 
 /**
+ * Compute the total context window size for an assistant message.
+ *
+ * With prompt caching (used by Claude, GPT, etc.), `tokens.input` only
+ * counts uncached input tokens. Cached tokens are reported separately in
+ * `tokens.cache.read` (reused from a previous turn) and `tokens.cache.write`
+ * (newly written to cache this turn). The real context window footprint is
+ * the sum of all three.
+ */
+function computeContextSize(info: MessageWithParts["info"]): number {
+  if (info.role !== "assistant") return 0;
+  return (
+    info.tokens.input +
+    info.tokens.cache.read +
+    info.tokens.cache.write
+  );
+}
+
+/**
  * Extract context growth data from assistant messages.
- * Each assistant message's tokens.input represents the total input tokens
- * sent to the model at that point — effectively the context window size.
+ * Each data point represents the full context window size at that turn,
+ * computed as input + cache.read + cache.write.
  */
 function extractContextData(
   messages: MessageWithParts[],
@@ -88,9 +106,9 @@ function extractContextData(
     }
 
     // info.role is "assistant" here, so tokens/providerID/modelID are available
-    const inputTokens = info.tokens.input;
+    const contextSize = computeContextSize(info);
     const outputTokens = info.tokens.output;
-    const pct = contextLimit > 0 ? (inputTokens / contextLimit) * 100 : 0;
+    const pct = contextLimit > 0 ? (contextSize / contextLimit) * 100 : 0;
 
     // Check if this message has compaction parts
     const hasCompaction = parts.some((p) => p.type === "compaction");
@@ -98,7 +116,7 @@ function extractContextData(
     points.push({
       index: msgIndex++,
       label: `Turn ${points.filter((p) => !p.isCompaction).length + 1}`,
-      inputTokens,
+      inputTokens: contextSize,
       outputTokens,
       utilizationPct: Math.min(pct, 100),
       isCompaction: hasCompaction,
@@ -218,10 +236,14 @@ export function ContextWindow({
   const outputLimit = limits?.output ?? 0;
 
   // Current context usage from the latest assistant message
-  const currentInput = lastAssistantInfo?.tokens.input ?? 0;
+  // Context size = input + cache.read + cache.write (not just tokens.input,
+  // which only counts uncached tokens)
+  const currentContextSize = lastAssistantInfo
+    ? computeContextSize(lastAssistantMsg!.info)
+    : 0;
   const currentOutput = lastAssistantInfo?.tokens.output ?? 0;
   const utilizationPct =
-    contextLimit > 0 ? Math.min((currentInput / contextLimit) * 100, 100) : 0;
+    contextLimit > 0 ? Math.min((currentContextSize / contextLimit) * 100, 100) : 0;
 
   // Extract data for the chart
   const contextData = extractContextData(messages, contextLimit);
@@ -338,7 +360,7 @@ export function ContextWindow({
                 Context Used
               </Text>
               <Text size="sm" fw={600}>
-                {formatTokens(currentInput)}
+                {formatTokens(currentContextSize)}
                 {hasLimits && (
                   <Text span size="xs" c="dimmed">
                     {" "}
