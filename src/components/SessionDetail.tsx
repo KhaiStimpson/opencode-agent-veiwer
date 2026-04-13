@@ -13,6 +13,7 @@ import {
   Info,
   Brain,
 } from "@phosphor-icons/react";
+import { useMemo } from "react";
 import { StatusBadge } from "./StatusBadge";
 import { MessageList } from "./MessageList";
 import { TodoList } from "./TodoList";
@@ -46,6 +47,12 @@ export function SessionDetail({
   modelLimits,
   onSelectSession,
 }: SessionDetailProps) {
+  // useMemo must be called before any early returns (rules of hooks)
+  const activeTodos = useMemo(
+    () => todos.filter((t) => t.status === "in_progress" || t.status === "pending"),
+    [todos],
+  );
+
   if (!session) {
     return (
       <EmptyState
@@ -54,10 +61,6 @@ export function SessionDetail({
       />
     );
   }
-
-  const activeTodos = todos.filter(
-    (t) => t.status === "in_progress" || t.status === "pending"
-  );
 
   return (
     <Stack gap={0} h="100%">

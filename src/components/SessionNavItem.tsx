@@ -1,4 +1,5 @@
 import { NavLink, Badge, Loader } from "@mantine/core";
+import { memo } from "react";
 
 import type { SessionNode } from "../types";
 import { formatRelativeTime } from "../lib/opencode";
@@ -11,7 +12,7 @@ interface SessionNavItemProps {
   depth?: number;
 }
 
-export function SessionNavItem({
+function SessionNavItemInner({
   node,
   selectedId,
   onSelect,
@@ -67,3 +68,5 @@ export function SessionNavItem({
     </NavLink>
   );
 }
+
+export const SessionNavItem = memo(SessionNavItemInner);

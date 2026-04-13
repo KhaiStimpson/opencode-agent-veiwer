@@ -18,6 +18,7 @@ import {
   CaretRight,
   ArrowsClockwise,
 } from "@phosphor-icons/react";
+import { useMemo } from "react";
 import { formatTokens, formatCost } from "../lib/opencode";
 import type { Message, Part, Session } from "../types";
 
@@ -279,8 +280,11 @@ function formatWeighted(w: number): string {
 
 export function TokenSummary({ messages, session }: TokenSummaryProps) {
   const isSubagent = Boolean(session?.parentID);
-  const totals = aggregateTokens(messages);
-  const premium = aggregatePremiumRequests(messages, isSubagent);
+  const totals = useMemo(() => aggregateTokens(messages), [messages]);
+  const premium = useMemo(
+    () => aggregatePremiumRequests(messages, isSubagent),
+    [messages, isSubagent],
+  );
   const [breakdownOpen, { toggle: toggleBreakdown }] = useDisclosure(false);
 
   const hasData =

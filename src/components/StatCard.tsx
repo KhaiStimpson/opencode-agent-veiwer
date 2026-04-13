@@ -1,5 +1,5 @@
 import { Paper, Stack, Text, Group, ThemeIcon } from "@mantine/core";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 
 interface StatCardProps {
   label: string;
@@ -9,7 +9,7 @@ interface StatCardProps {
   color: string;
 }
 
-export function StatCard({ label, value, subtitle, icon, color }: StatCardProps) {
+function StatCardInner({ label, value, subtitle, icon, color }: StatCardProps) {
   return (
     <Paper p="md" withBorder radius="md" style={{ flex: 1, minWidth: 160 }}>
       <Group justify="space-between" wrap="nowrap">
@@ -33,3 +33,5 @@ export function StatCard({ label, value, subtitle, icon, color }: StatCardProps)
     </Paper>
   );
 }
+
+export const StatCard = memo(StatCardInner);

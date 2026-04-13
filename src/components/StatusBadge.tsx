@@ -1,4 +1,5 @@
 import { Badge, Loader } from "@mantine/core";
+import { memo } from "react";
 import type { SessionStatus } from "../types";
 
 interface StatusBadgeProps {
@@ -6,7 +7,7 @@ interface StatusBadgeProps {
   size?: "xs" | "sm" | "md" | "lg";
 }
 
-export function StatusBadge({ status, size = "sm" }: StatusBadgeProps) {
+function StatusBadgeInner({ status, size = "sm" }: StatusBadgeProps) {
   switch (status.type) {
     case "busy":
       return (
@@ -34,3 +35,5 @@ export function StatusBadge({ status, size = "sm" }: StatusBadgeProps) {
       );
   }
 }
+
+export const StatusBadge = memo(StatusBadgeInner);

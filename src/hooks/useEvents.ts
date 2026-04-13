@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { notifications } from "@mantine/notifications";
 import type { OpencodeClient } from "../lib/opencode";
 import type { Event } from "@opencode-ai/sdk";
@@ -11,10 +11,17 @@ interface UseEventsOptions {
   enabled?: boolean;
 }
 
-export function useEvents({ client, onEvent, enabled = true }: UseEventsOptions) {
+interface UseEventsResult {
+  stop: () => void;
+  /** true when the SSE stream is actively connected and receiving events */
+  sseConnected: boolean;
+}
+
+export function useEvents({ client, onEvent, enabled = true }: UseEventsOptions): UseEventsResult {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const abortRef = useRef<AbortController | null>(null);
+  const [sseConnected, setSseConnected] = useState(false);
 
   const stop = useCallback(() => {
     if (abortRef.current) {
@@ -26,6 +33,7 @@ export function useEvents({ client, onEvent, enabled = true }: UseEventsOptions)
   useEffect(() => {
     if (!client || !enabled) {
       stop();
+      setSseConnected(false);
       return;
     }
 
@@ -37,6 +45,7 @@ export function useEvents({ client, onEvent, enabled = true }: UseEventsOptions)
           console.log("[SSE] Connecting to event stream...");
           const result = await client!.event.subscribe();
           console.log("[SSE] Connected, waiting for events...");
+          if (!cancelled) setSseConnected(true);
 
           let eventCount = 0;
           for await (const event of result.stream) {
@@ -49,7 +58,9 @@ export function useEvents({ client, onEvent, enabled = true }: UseEventsOptions)
           }
 
           console.log(`[SSE] Stream ended after ${eventCount} events`);
+          if (!cancelled) setSseConnected(false);
         } catch (err) {
+          if (!cancelled) setSseConnected(false);
           if (cancelled) break;
 
           const msg = err instanceof Error ? err.message : "SSE connection error";
@@ -74,9 +85,10 @@ export function useEvents({ client, onEvent, enabled = true }: UseEventsOptions)
 
     return () => {
       cancelled = true;
+      setSseConnected(false);
       stop();
     };
   }, [client, enabled, stop]);
 
-  return { stop };
+  return { stop, sseConnected };
 }

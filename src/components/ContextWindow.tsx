@@ -28,6 +28,7 @@ import {
   Wrench,
   Scissors,
 } from "@phosphor-icons/react";
+import { useMemo } from "react";
 import { formatTokens } from "../lib/opencode";
 import { getModelLimits } from "../hooks/useProviders";
 import type { Message, Part } from "../types";
@@ -558,9 +559,10 @@ export function ContextWindow({
   modelLimits,
 }: ContextWindowProps) {
   // Determine the model used in this session from the most recent assistant message
-  const lastAssistantMsg = [...messages]
-    .reverse()
-    .find((m) => m.info.role === "assistant");
+  const lastAssistantMsg = useMemo(
+    () => [...messages].reverse().find((m) => m.info.role === "assistant"),
+    [messages],
+  );
   const lastAssistantInfo =
     lastAssistantMsg?.info.role === "assistant" ? lastAssistantMsg.info : null;
 
@@ -568,8 +570,8 @@ export function ContextWindow({
   const modelID = lastAssistantInfo?.modelID ?? "";
   const limits = getModelLimits(modelLimits, providerID, modelID);
 
-  const contextLimit = limits?.context ?? 0;
-  const outputLimit = limits?.output ?? 0;
+  const contextLimit = useMemo(() => limits?.context ?? 0, [limits]);
+  const outputLimit = useMemo(() => limits?.output ?? 0, [limits]);
 
   // Current context usage from the latest assistant message
   // Context size = input + cache.read + cache.write (not just tokens.input,
@@ -581,22 +583,29 @@ export function ContextWindow({
   const utilizationPct =
     contextLimit > 0 ? Math.min((currentContextSize / contextLimit) * 100, 100) : 0;
 
-  // Extract data for the chart
-  const contextData = extractContextData(messages, contextLimit);
-  const { data: chartData, compactionTurns } = buildChartData(contextData, contextLimit);
-  const stepTokens = extractStepTokens(messages);
-  const compactions = extractCompactions(messages);
+  // Extract data for the chart — memoized to avoid recomputing on every render
+  const contextData = useMemo(
+    () => extractContextData(messages, contextLimit),
+    [messages, contextLimit],
+  );
+  const { data: chartData, compactionTurns } = useMemo(
+    () => buildChartData(contextData, contextLimit),
+    [contextData, contextLimit],
+  );
+  const stepTokens = useMemo(() => extractStepTokens(messages), [messages]);
+  const compactions = useMemo(() => extractCompactions(messages), [messages]);
   const [stepTokensOpen, { toggle: toggleStepTokens }] = useDisclosure(false);
 
   // Count assistant messages (turns)
-  const assistantCount = messages.filter(
-    (m) => m.info.role === "assistant",
-  ).length;
+  const assistantCount = useMemo(
+    () => messages.filter((m) => m.info.role === "assistant").length,
+    [messages],
+  );
 
   // Peak context usage
-  const peakInput = contextData.reduce(
-    (max, d) => Math.max(max, d.inputTokens),
-    0,
+  const peakInput = useMemo(
+    () => contextData.reduce((max, d) => Math.max(max, d.inputTokens), 0),
+    [contextData],
   );
   const peakPct =
     contextLimit > 0 ? Math.min((peakInput / contextLimit) * 100, 100) : 0;

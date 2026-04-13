@@ -30,6 +30,7 @@ import {
   ArrowClockwise,
   Pulse,
 } from "@phosphor-icons/react";
+import { useMemo } from "react";
 import { formatTokens, formatCost } from "../lib/opencode";
 import { StatCard } from "./StatCard";
 import type { DashboardStats } from "../hooks/useDashboard";
@@ -97,6 +98,73 @@ function formatDate(dateStr: string): string {
 // ---------------------------------------------------------------------------
 
 export function Dashboard({ stats, loading, progress, onRefresh }: DashboardProps) {
+  // All useMemo calls must be before any early returns (rules of hooks).
+  // When stats is null, provide empty/zero defaults.
+
+  const modelDonutData = useMemo(
+    () =>
+      stats
+        ? stats.modelStats
+            .filter((m) => m.cost > 0)
+            .slice(0, 8)
+            .map((m, i) => ({
+              name: m.displayName,
+              value: m.cost,
+              color: CHART_COLORS[i % CHART_COLORS.length],
+            }))
+        : [],
+    [stats],
+  );
+
+  const tokenBreakdownData = useMemo(
+    () =>
+      stats
+        ? [
+            { type: "Input", tokens: stats.totalTokens.input },
+            { type: "Output", tokens: stats.totalTokens.output },
+            { type: "Reasoning", tokens: stats.totalTokens.reasoning },
+            { type: "Cache Read", tokens: stats.totalTokens.cacheRead },
+            { type: "Cache Write", tokens: stats.totalTokens.cacheWrite },
+          ].filter((d) => d.tokens > 0)
+        : [],
+    [stats],
+  );
+
+  const dailyData = useMemo(
+    () =>
+      stats
+        ? stats.dailyActivity.map((d) => ({
+            date: formatDate(d.date),
+            "Premium Requests": d.premiumRequests,
+            Cost: parseFloat(d.cost.toFixed(2)),
+            "Main Sessions": d.mainSessions,
+            "Subagents": d.subagentSessions,
+          }))
+        : [],
+    [stats],
+  );
+
+  const toolBarData = useMemo(
+    () =>
+      stats
+        ? stats.toolStats.slice(0, 15).map((t) => ({
+            tool: t.tool.length > 20 ? t.tool.slice(0, 18) + ".." : t.tool,
+            fullName: t.tool,
+            Calls: t.calls,
+            Errors: t.errors,
+          }))
+        : [],
+    [stats],
+  );
+
+  const totalTokenCount = useMemo(
+    () =>
+      stats
+        ? stats.totalTokens.input + stats.totalTokens.output + stats.totalTokens.reasoning
+        : 0,
+    [stats],
+  );
+
   if (loading && !stats) {
     return (
       <Center h="100%" p="xl">
@@ -131,42 +199,6 @@ export function Dashboard({ stats, loading, progress, onRefresh }: DashboardProp
       </Center>
     );
   }
-
-  // Prepare chart data
-  const modelDonutData = stats.modelStats
-    .filter((m) => m.cost > 0)
-    .slice(0, 8)
-    .map((m, i) => ({
-      name: m.displayName,
-      value: m.cost,
-      color: CHART_COLORS[i % CHART_COLORS.length],
-    }));
-
-  const tokenBreakdownData = [
-    { type: "Input", tokens: stats.totalTokens.input },
-    { type: "Output", tokens: stats.totalTokens.output },
-    { type: "Reasoning", tokens: stats.totalTokens.reasoning },
-    { type: "Cache Read", tokens: stats.totalTokens.cacheRead },
-    { type: "Cache Write", tokens: stats.totalTokens.cacheWrite },
-  ].filter((d) => d.tokens > 0);
-
-  const dailyData = stats.dailyActivity.map((d) => ({
-    date: formatDate(d.date),
-    "Premium Requests": d.premiumRequests,
-    Cost: parseFloat(d.cost.toFixed(2)),
-    "Main Sessions": d.mainSessions,
-    "Subagents": d.subagentSessions,
-  }));
-
-  const toolBarData = stats.toolStats.slice(0, 15).map((t) => ({
-    tool: t.tool.length > 20 ? t.tool.slice(0, 18) + ".." : t.tool,
-    fullName: t.tool,
-    Calls: t.calls,
-    Errors: t.errors,
-  }));
-
-  const totalTokenCount = stats.totalTokens.input + stats.totalTokens.output +
-    stats.totalTokens.reasoning;
 
   return (
     <ScrollArea h="100%" offsetScrollbars>

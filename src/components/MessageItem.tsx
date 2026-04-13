@@ -1,5 +1,6 @@
 import { Paper, Group, Text, Badge, Stack, Accordion, Code, Divider } from "@mantine/core";
 import { User, Robot, ArrowsClockwise, Lightning } from "@phosphor-icons/react";
+import { memo } from "react";
 import { ToolCallPartComponent } from "./ToolCallPart";
 import { formatRelativeTime, formatTokens } from "../lib/opencode";
 import type { Message, Part } from "../types";
@@ -10,7 +11,7 @@ interface MessageItemProps {
   onSelectSession?: (id: string) => void;
 }
 
-export function MessageItem({ info, parts, onSelectSession }: MessageItemProps) {
+function MessageItemInner({ info, parts, onSelectSession }: MessageItemProps) {
   const isUser = info.role === "user";
 
   const textParts = parts.filter((p) => p.type === "text");
@@ -203,3 +204,5 @@ export function MessageItem({ info, parts, onSelectSession }: MessageItemProps) 
     </Paper>
   );
 }
+
+export const MessageItem = memo(MessageItemInner);

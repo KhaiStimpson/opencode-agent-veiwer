@@ -3,7 +3,7 @@ import {
   useContext,
   useState,
   useCallback,
-  useRef,
+  useMemo,
   type ReactNode,
 } from "react";
 import { createClient, type OpencodeClient } from "../lib/opencode";
@@ -29,14 +29,14 @@ function getStoredUrl(): string {
 }
 
 export function OpencodeProvider({ children }: { children: ReactNode }) {
-  const clientRef = useRef<OpencodeClient | null>(null);
+  const [client, setClient] = useState<OpencodeClient | null>(null);
   const [connection, setConnection] = useState<ConnectionState>({
     status: "disconnected",
     serverUrl: getStoredUrl(),
   });
 
   const disconnect = useCallback(() => {
-    clientRef.current = null;
+    setClient(null);
     setConnection((prev) => ({
       ...prev,
       status: "disconnected",
@@ -65,8 +65,8 @@ export function OpencodeProvider({ children }: { children: ReactNode }) {
         throw new Error("Server reported unhealthy");
       }
 
-      const client = createClient(normalized);
-      clientRef.current = client;
+      const c = createClient(normalized);
+      setClient(c);
 
       try {
         localStorage.setItem(STORAGE_KEY, normalized);
@@ -78,7 +78,7 @@ export function OpencodeProvider({ children }: { children: ReactNode }) {
         version: health.version,
       });
     } catch (err) {
-      clientRef.current = null;
+      setClient(null);
       setConnection({
         status: "error",
         serverUrl: normalized,
@@ -87,15 +87,13 @@ export function OpencodeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const value = useMemo<OpencodeContextValue>(
+    () => ({ client, connection, connect, disconnect }),
+    [client, connection, connect, disconnect],
+  );
+
   return (
-    <OpencodeContext.Provider
-      value={{
-        client: clientRef.current,
-        connection,
-        connect,
-        disconnect,
-      }}
-    >
+    <OpencodeContext.Provider value={value}>
       {children}
     </OpencodeContext.Provider>
   );

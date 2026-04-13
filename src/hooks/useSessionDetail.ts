@@ -15,17 +15,36 @@ interface UseSessionDetailResult {
 }
 
 // How often to poll for updates (ms)
-const POLL_INTERVAL = 2000;
+// When SSE is healthy, poll much less frequently (fallback safety net).
+const POLL_INTERVAL_SSE = 30_000;
+const POLL_INTERVAL_NO_SSE = 2000;
+
+/** Lightweight fingerprint for a message list. Captures message IDs, part
+ *  counts, and creation timestamps so we can skip setState when
+ *  nothing actually changed. */
+function messagesFingerprint(msgs: MessageWithParts[]): string {
+  return msgs
+    .map((m) => `${m.info.id}:${m.parts.length}:${m.info.time.created}`)
+    .join("|");
+}
+
+/** Fingerprint for todos. */
+function todosFingerprint(todos: Todo[]): string {
+  return todos.map((t) => `${t.id}:${t.status}`).join("|");
+}
 
 export function useSessionDetail(
   client: OpencodeClient | null,
-  sessionId: string | null
+  sessionId: string | null,
+  sseConnected: boolean,
 ): UseSessionDetailResult {
   const [messages, setMessages] = useState<MessageWithParts[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(false);
   const currentSessionRef = useRef(sessionId);
   currentSessionRef.current = sessionId;
+  const lastMsgsFpRef = useRef("");
+  const lastTodosFpRef = useRef("");
 
   // Shared fetch function used by both initial load and polling
   const fetchDetail = useCallback(
@@ -55,6 +74,8 @@ export function useSessionDetail(
     if (!client || !sessionId) {
       setMessages([]);
       setTodos([]);
+      lastMsgsFpRef.current = "";
+      lastTodosFpRef.current = "";
       return;
     }
 
@@ -80,6 +101,7 @@ export function useSessionDetail(
 
   // Polling: re-fetch messages periodically for the active session.
   // This ensures updates even if the SSE stream isn't delivering events.
+  // When SSE is healthy, poll infrequently as a safety net.
   useEffect(() => {
     if (!client || !sessionId) return;
 
@@ -88,12 +110,23 @@ export function useSessionDetail(
       if (!sid) return;
       const result = await fetchDetail(sid);
       if (!result || sid !== currentSessionRef.current) return;
-      setMessages(result.messages);
-      setTodos(result.todos);
-    }, POLL_INTERVAL);
+
+      // Skip setState if nothing actually changed — avoids cascading re-renders
+      const newMsgsFp = messagesFingerprint(result.messages);
+      const newTodosFp = todosFingerprint(result.todos);
+
+      if (newMsgsFp !== lastMsgsFpRef.current) {
+        lastMsgsFpRef.current = newMsgsFp;
+        setMessages(result.messages);
+      }
+      if (newTodosFp !== lastTodosFpRef.current) {
+        lastTodosFpRef.current = newTodosFp;
+        setTodos(result.todos);
+      }
+    }, sseConnected ? POLL_INTERVAL_SSE : POLL_INTERVAL_NO_SSE);
 
     return () => clearInterval(interval);
-  }, [client, sessionId, fetchDetail]);
+  }, [client, sessionId, fetchDetail, sseConnected]);
 
   // Also handle SSE events for lower-latency updates
   const handleEvent = useCallback(

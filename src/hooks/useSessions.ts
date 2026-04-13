@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { OpencodeClient } from "../lib/opencode";
 import type {
   Session,
@@ -63,15 +63,36 @@ function buildTree(
 }
 
 // How often to poll for session list / status updates (ms)
-const POLL_INTERVAL = 3000;
+// When SSE is healthy, we poll much less frequently (fallback safety net).
+// When SSE is down, we poll aggressively to keep the UI current.
+const POLL_INTERVAL_SSE = 30_000;
+const POLL_INTERVAL_NO_SSE = 3000;
 
-export function useSessions(client: OpencodeClient | null): UseSessionsResult {
+/** Lightweight fingerprint to detect whether the session list actually changed. */
+function sessionsFingerprint(sessions: Session[]): string {
+  // id + updated timestamp uniquely identifies the state of each session
+  return sessions.map((s) => `${s.id}:${s.time.updated}`).join("|");
+}
+
+/** Lightweight fingerprint for session status map. */
+function statusFingerprint(statusMap: SessionStatusMap): string {
+  return Object.entries(statusMap)
+    .map(([id, s]) => `${id}:${s.type}`)
+    .join("|");
+}
+
+export function useSessions(
+  client: OpencodeClient | null,
+  sseConnected: boolean,
+): UseSessionsResult {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [statusMap, setStatusMap] = useState<SessionStatusMap>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
+  const lastSessionsFpRef = useRef("");
+  const lastStatusFpRef = useRef("");
 
   // Shared fetch for initial load and polling
   const fetchSessions = useCallback(async () => {
@@ -119,19 +140,33 @@ export function useSessions(client: OpencodeClient | null): UseSessionsResult {
     };
   }, [client, fetchSessions]);
 
-  // Polling fallback — keeps sidebar in sync even if SSE is unreliable
+  // Polling fallback — keeps sidebar in sync even if SSE is unreliable.
+  // When SSE is healthy, poll infrequently (safety net). When SSE is down,
+  // poll aggressively to keep the UI current.
   useEffect(() => {
     if (!client) return;
 
     const interval = setInterval(async () => {
       const result = await fetchSessions();
       if (!result) return;
-      setSessions(result.sessions);
-      setStatusMap(result.statusMap);
-    }, POLL_INTERVAL);
+
+      // Skip setState if nothing actually changed (avoids new object references
+      // that would cascade re-renders through the entire component tree)
+      const newSessionsFp = sessionsFingerprint(result.sessions);
+      const newStatusFp = statusFingerprint(result.statusMap);
+
+      if (newSessionsFp !== lastSessionsFpRef.current) {
+        lastSessionsFpRef.current = newSessionsFp;
+        setSessions(result.sessions);
+      }
+      if (newStatusFp !== lastStatusFpRef.current) {
+        lastStatusFpRef.current = newStatusFp;
+        setStatusMap(result.statusMap);
+      }
+    }, sseConnected ? POLL_INTERVAL_SSE : POLL_INTERVAL_NO_SSE);
 
     return () => clearInterval(interval);
-  }, [client, fetchSessions]);
+  }, [client, fetchSessions, sseConnected]);
 
   // SSE event handler for lower-latency updates
   const handleEvent = useCallback((event: Event) => {
@@ -174,7 +209,7 @@ export function useSessions(client: OpencodeClient | null): UseSessionsResult {
     setSelectedId(id);
   }, []);
 
-  const tree = buildTree(sessions, statusMap);
+  const tree = useMemo(() => buildTree(sessions, statusMap), [sessions, statusMap]);
 
   return {
     sessions,

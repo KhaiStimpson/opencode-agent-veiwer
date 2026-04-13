@@ -5,6 +5,7 @@ import {
   Spinner,
   Clock,
 } from "@phosphor-icons/react";
+import { memo } from "react";
 import type { ToolPart } from "@opencode-ai/sdk";
 
 interface ToolCallPartProps {
@@ -45,7 +46,7 @@ function formatDuration(start: number, end?: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function ToolCallPartComponent({ part }: ToolCallPartProps) {
+function ToolCallPartInner({ part }: ToolCallPartProps) {
   const { state, tool } = part;
   const title = "title" in state && state.title ? state.title : tool;
   const hasTime = "time" in state && state.time;
@@ -110,3 +111,5 @@ export function ToolCallPartComponent({ part }: ToolCallPartProps) {
     </Accordion.Item>
   );
 }
+
+export const ToolCallPartComponent = memo(ToolCallPartInner);

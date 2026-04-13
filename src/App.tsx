@@ -6,7 +6,7 @@ import {
   SegmentedControl,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { useCallback } from "react";
+import { useCallback, useMemo, useRef, useEffect } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router";
 import { OpencodeProvider, useOpencode } from "./hooks/useOpencode";
 import { useEvents } from "./hooks/useEvents";
@@ -19,7 +19,20 @@ import { SessionNav } from "./components/SessionNav";
 import { SessionDetail } from "./components/SessionDetail";
 import { Dashboard } from "./components/Dashboard";
 import { EmptyState } from "./components/EmptyState";
-import type { Event, SessionStatus } from "./types";
+import type { Event, SessionStatus, SessionNode } from "./types";
+
+/** Recursively find a session node by ID */
+function findSession(
+  nodes: SessionNode[],
+  id: string,
+): SessionNode | null {
+  for (const n of nodes) {
+    if (n.session.id === id) return n;
+    const found = findSession(n.children, id);
+    if (found) return found;
+  }
+  return null;
+}
 
 function AppContent() {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(true);
@@ -30,6 +43,20 @@ function AppContent() {
   const isDashboard = location.pathname === "/dashboard";
 
   const isConnected = connection.status === "connected";
+
+  // SSE event stream — called early so sseConnected is available for polling hooks.
+  // useEvents uses a ref internally for onEvent, so the callback can be updated below.
+  const eventHandlerRef = useRef<(event: Event) => void>(() => {});
+  const stableOnEvent = useCallback(
+    (event: Event) => eventHandlerRef.current(event),
+    [],
+  );
+  const { sseConnected } = useEvents({
+    client: isConnected ? client : null,
+    onEvent: stableOnEvent,
+    enabled: isConnected,
+  });
+
   const {
     sessions,
     tree,
@@ -38,22 +65,31 @@ function AppContent() {
     selectSession,
     loading: sessionsLoading,
     handleEvent: handleSessionEvent,
-  } = useSessions(isConnected ? client : null);
+  } = useSessions(isConnected ? client : null, sseConnected);
 
   const {
     messages,
     todos,
     loading: detailLoading,
     handleEvent: handleDetailEvent,
-  } = useSessionDetail(isConnected ? client : null, selectedId);
+  } = useSessionDetail(isConnected ? client : null, selectedId, sseConnected);
+
+  // Keep the event handler ref in sync with the latest handlers
+  useEffect(() => {
+    eventHandlerRef.current = (event: Event) => {
+      handleSessionEvent(event);
+      handleDetailEvent(event);
+    };
+  });
 
   // Provider/model metadata (context window limits)
   const { modelLimits } = useProviders(isConnected ? client : null);
 
-  // Count active (busy) sessions
-  const activeSessions = Object.values(statusMap).filter(
-    (s) => s.type === "busy"
-  ).length;
+  // Count active (busy) sessions — memoized to avoid recalculating on every render
+  const activeSessions = useMemo(
+    () => Object.values(statusMap).filter((s) => s.type === "busy").length,
+    [statusMap],
+  );
 
   // Dashboard hook
   const {
@@ -67,35 +103,11 @@ function AppContent() {
     activeSessions,
   );
 
-  // Combined event handler
-  const onEvent = useCallback(
-    (event: Event) => {
-      handleSessionEvent(event);
-      handleDetailEvent(event);
-    },
-    [handleSessionEvent, handleDetailEvent]
+  // Find selected session object — memoized to avoid recursive search on every render
+  const selectedNode = useMemo(
+    () => (selectedId ? findSession(tree, selectedId) : null),
+    [tree, selectedId],
   );
-
-  useEvents({
-    client: isConnected ? client : null,
-    onEvent,
-    enabled: isConnected,
-  });
-
-  // Find selected session object
-  const findSession = (
-    nodes: typeof tree,
-    id: string
-  ): (typeof tree)[0] | null => {
-    for (const n of nodes) {
-      if (n.session.id === id) return n;
-      const found = findSession(n.children, id);
-      if (found) return found;
-    }
-    return null;
-  };
-
-  const selectedNode = selectedId ? findSession(tree, selectedId) : null;
   const selectedSession = selectedNode?.session ?? null;
   const selectedStatus: SessionStatus = selectedId
     ? statusMap[selectedId] || { type: "idle" }
