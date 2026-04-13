@@ -184,22 +184,71 @@ function extractCompactions(messages: MessageWithParts[]): {
 
 interface ChartDataPoint {
   turn: string;
-  "Context Used": number;
+  "Context Used": number | null;
   "Context Limit": number;
+  isCompaction?: boolean;
 }
 
+interface ChartBuildResult {
+  data: ChartDataPoint[];
+  /** Turn labels where compactions occurred, used for vertical reference lines */
+  compactionTurns: string[];
+}
+
+/**
+ * Build chart data including compaction drop points.
+ *
+ * For each compaction, we insert a synthetic data point with "Context Used"
+ * set to null (breaks the line) preceded by the last known context value and
+ * followed by the post-compaction value. This creates a sharp visible drop.
+ * We also record the label for a vertical reference line.
+ */
 function buildChartData(
   contextData: ContextDataPoint[],
   contextLimit: number,
-): ChartDataPoint[] {
-  // Filter to assistant messages only (skip pure compaction markers)
-  return contextData
-    .filter((d) => !d.isCompaction || d.inputTokens > 0)
-    .map((d) => ({
-      turn: d.label,
-      "Context Used": d.inputTokens,
-      "Context Limit": contextLimit,
-    }));
+): ChartBuildResult {
+  const data: ChartDataPoint[] = [];
+  const compactionTurns: string[] = [];
+
+  let lastContextValue = 0;
+
+  for (const d of contextData) {
+    if (d.isCompaction && d.inputTokens === 0) {
+      // Pure compaction marker (no tokens — came from a non-assistant message).
+      // Insert a zero-value point to show the drop.
+      const label = `Compact ${compactionTurns.length + 1}`;
+      compactionTurns.push(label);
+      // Drop the line to 0 at this point
+      data.push({
+        turn: label,
+        "Context Used": 0,
+        "Context Limit": contextLimit,
+        isCompaction: true,
+      });
+    } else {
+      // Normal assistant turn (may also have a compaction flag if the
+      // compaction part is attached to the assistant message itself).
+      if (d.isCompaction) {
+        // The context already dropped — mark the previous value then show drop
+        const label = `Compact ${compactionTurns.length + 1}`;
+        compactionTurns.push(label);
+        data.push({
+          turn: label,
+          "Context Used": lastContextValue,
+          "Context Limit": contextLimit,
+          isCompaction: true,
+        });
+      }
+      lastContextValue = d.inputTokens;
+      data.push({
+        turn: d.label,
+        "Context Used": d.inputTokens,
+        "Context Limit": contextLimit,
+      });
+    }
+  }
+
+  return { data, compactionTurns };
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +296,7 @@ export function ContextWindow({
 
   // Extract data for the chart
   const contextData = extractContextData(messages, contextLimit);
-  const chartData = buildChartData(contextData, contextLimit);
+  const { data: chartData, compactionTurns } = buildChartData(contextData, contextLimit);
   const stepTokens = extractStepTokens(messages);
   const compactions = extractCompactions(messages);
 
@@ -434,7 +483,8 @@ export function ContextWindow({
             data={chartData}
             dataKey="turn"
             withDots
-            curveType="monotone"
+            connectNulls={false}
+            curveType="linear"
             series={[
               {
                 name: "Context Used",
@@ -449,12 +499,18 @@ export function ContextWindow({
                   ]
                 : []),
             ]}
+            referenceLines={compactionTurns.map((turn) => ({
+              x: turn,
+              color: "orange.6",
+              label: "Compaction",
+              labelPosition: "insideTopRight" as const,
+            }))}
             valueFormatter={(value) => formatTokens(value)}
           />
-          {compactions.total > 0 && (
+          {compactionTurns.length > 0 && (
             <Text size="xs" c="dimmed" mt="xs">
-              Context drops in the chart indicate compaction events where
-              earlier messages were summarized to free context space.
+              Orange lines mark compaction events — earlier messages were
+              summarized to free context space, causing the drop.
             </Text>
           )}
         </Paper>
