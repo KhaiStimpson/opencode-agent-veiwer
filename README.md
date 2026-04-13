@@ -1,5 +1,7 @@
 # OpenCode Agent Viewer
 
+![Proudly Vibe Coded - Midnight Glow](https://vibecoded.fyi/badges/flat/main/proudly-vibe-coded-midnight-glow.svg)
+
 Read-only web UI for monitoring OpenCode sessions and subagents in real time.
 
 It connects directly from the browser to a running OpenCode server with `@opencode-ai/sdk`, shows the session tree in a sidebar, and renders messages, todos, token usage, cost, and premium-request estimates in the main panel.
