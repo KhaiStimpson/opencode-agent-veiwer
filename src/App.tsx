@@ -1,22 +1,36 @@
-import { AppShell, Burger, Group, LoadingOverlay } from "@mantine/core";
+import {
+  AppShell,
+  Burger,
+  Group,
+  LoadingOverlay,
+  SegmentedControl,
+} from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { useCallback } from "react";
+import { Routes, Route, useNavigate, useLocation } from "react-router";
 import { OpencodeProvider, useOpencode } from "./hooks/useOpencode";
 import { useEvents } from "./hooks/useEvents";
 import { useSessions } from "./hooks/useSessions";
 import { useSessionDetail } from "./hooks/useSessionDetail";
+import { useDashboard } from "./hooks/useDashboard";
 import { ConnectionHeader } from "./components/ConnectionHeader";
 import { SessionNav } from "./components/SessionNav";
 import { SessionDetail } from "./components/SessionDetail";
+import { Dashboard } from "./components/Dashboard";
 import { EmptyState } from "./components/EmptyState";
 import type { Event, SessionStatus } from "./types";
 
 function AppContent() {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(true);
   const { client, connection, connect, disconnect } = useOpencode();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const isDashboard = location.pathname === "/dashboard";
 
   const isConnected = connection.status === "connected";
   const {
+    sessions,
     tree,
     statusMap,
     selectedId,
@@ -31,6 +45,23 @@ function AppContent() {
     loading: detailLoading,
     handleEvent: handleDetailEvent,
   } = useSessionDetail(isConnected ? client : null, selectedId);
+
+  // Count active (busy) sessions
+  const activeSessions = Object.values(statusMap).filter(
+    (s) => s.type === "busy"
+  ).length;
+
+  // Dashboard hook
+  const {
+    stats: dashboardStats,
+    loading: dashboardLoading,
+    progress: dashboardProgress,
+    refresh: refreshDashboard,
+  } = useDashboard(
+    isConnected && isDashboard ? client : null,
+    isDashboard ? sessions : [],
+    activeSessions,
+  );
 
   // Combined event handler
   const onEvent = useCallback(
@@ -66,6 +97,10 @@ function AppContent() {
     ? statusMap[selectedId] || { type: "idle" }
     : { type: "idle" };
 
+  const handleViewChange = (value: string) => {
+    navigate(value === "dashboard" ? "/dashboard" : "/");
+  };
+
   return (
     <AppShell
       padding={0}
@@ -73,21 +108,37 @@ function AppContent() {
       navbar={{
         width: 320,
         breakpoint: "sm",
-        collapsed: { mobile: !navOpened, desktop: !navOpened },
+        collapsed: {
+          mobile: !navOpened || isDashboard,
+          desktop: !navOpened || isDashboard,
+        },
       }}
     >
       <AppShell.Header>
         <Group h="100%" px="xs" wrap="nowrap">
-          <Burger
-            opened={navOpened}
-            onClick={toggleNav}
-            size="sm"
-          />
+          {!isDashboard && (
+            <Burger
+              opened={navOpened}
+              onClick={toggleNav}
+              size="sm"
+            />
+          )}
           <ConnectionHeader
             connection={connection}
             onConnect={connect}
             onDisconnect={disconnect}
           />
+          {isConnected && (
+            <SegmentedControl
+              size="xs"
+              value={isDashboard ? "dashboard" : "sessions"}
+              onChange={handleViewChange}
+              data={[
+                { label: "Sessions", value: "sessions" },
+                { label: "Dashboard", value: "dashboard" },
+              ]}
+            />
+          )}
         </Group>
       </AppShell.Header>
 
@@ -117,14 +168,32 @@ function AppContent() {
             overlayProps={{ blur: 2 }}
           />
           {isConnected ? (
-            <SessionDetail
-              session={selectedSession}
-              status={selectedStatus}
-              messages={messages}
-              todos={todos}
-              loading={detailLoading}
-              onSelectSession={selectSession}
-            />
+            <Routes>
+              <Route
+                path="/dashboard"
+                element={
+                  <Dashboard
+                    stats={dashboardStats}
+                    loading={dashboardLoading}
+                    progress={dashboardProgress}
+                    onRefresh={refreshDashboard}
+                  />
+                }
+              />
+              <Route
+                path="*"
+                element={
+                  <SessionDetail
+                    session={selectedSession}
+                    status={selectedStatus}
+                    messages={messages}
+                    todos={todos}
+                    loading={detailLoading}
+                    onSelectSession={selectSession}
+                  />
+                }
+              />
+            </Routes>
           ) : (
             <EmptyState
               title="Welcome to OpenCode Agent Viewer"
