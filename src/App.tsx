@@ -115,22 +115,25 @@ function AppContent() {
       }}
     >
       <AppShell.Header>
-        <Group h="100%" px="xs" wrap="nowrap">
-          {!isDashboard && (
-            <Burger
-              opened={navOpened}
-              onClick={toggleNav}
-              size="sm"
+        <Group h="100%" px="xs" wrap="nowrap" justify="space-between">
+          <Group wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+            {!isDashboard && (
+              <Burger
+                opened={navOpened}
+                onClick={toggleNav}
+                size="sm"
+              />
+            )}
+            <ConnectionHeader
+              connection={connection}
+              onConnect={connect}
+              onDisconnect={disconnect}
             />
-          )}
-          <ConnectionHeader
-            connection={connection}
-            onConnect={connect}
-            onDisconnect={disconnect}
-          />
+          </Group>
           {isConnected && (
             <SegmentedControl
               size="xs"
+              mr="xs"
               value={isDashboard ? "dashboard" : "sessions"}
               onChange={handleViewChange}
               data={[
