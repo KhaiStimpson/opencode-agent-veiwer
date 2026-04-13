@@ -21,6 +21,7 @@ import {
   CurrencyDollar,
   ChartBar,
   Users,
+  TreeStructure,
   Wrench,
   Clock,
   Warning,
@@ -153,7 +154,8 @@ export function Dashboard({ stats, loading, progress, onRefresh }: DashboardProp
     date: formatDate(d.date),
     "Premium Requests": d.premiumRequests,
     Cost: parseFloat(d.cost.toFixed(2)),
-    Sessions: d.sessions,
+    "Main Sessions": d.mainSessions,
+    "Subagents": d.subagentSessions,
   }));
 
   const toolBarData = stats.toolStats.slice(0, 15).map((t) => ({
@@ -192,13 +194,20 @@ export function Dashboard({ stats, loading, progress, onRefresh }: DashboardProp
         {/* ================================================================ */}
         {/* Section 1: Overview Stat Cards                                    */}
         {/* ================================================================ */}
-        <SimpleGrid cols={{ base: 2, sm: 3, md: 5 }} spacing="sm">
+        <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }} spacing="sm">
           <StatCard
-            label="Sessions"
-            value={stats.totalSessions}
-            subtitle={`${stats.rootSessions} root, ${stats.subagentSessions} subagent`}
+            label="Main Sessions"
+            value={stats.rootSessions}
+            subtitle={`of ${stats.totalSessions} total`}
             icon={<Users size={20} />}
             color="blue"
+          />
+          <StatCard
+            label="Subagents"
+            value={stats.subagentSessions}
+            subtitle={stats.rootSessions > 0 ? `${(stats.subagentSessions / stats.rootSessions).toFixed(1)} per session` : undefined}
+            icon={<TreeStructure size={20} />}
+            color="violet"
           />
           <StatCard
             label="Premium Requests"
@@ -346,7 +355,8 @@ export function Dashboard({ stats, loading, progress, onRefresh }: DashboardProp
               dataKey="date"
               series={[
                 { name: "Premium Requests", color: "yellow.6" },
-                { name: "Sessions", color: "blue.6" },
+                { name: "Main Sessions", color: "blue.6" },
+                { name: "Subagents", color: "violet.6" },
               ]}
               curveType="monotone"
               withDots={dailyData.length <= 30}

@@ -41,6 +41,8 @@ interface ToolStats {
 interface DailyActivity {
   date: string;
   sessions: number;
+  mainSessions: number;
+  subagentSessions: number;
   premiumRequests: number;
   cost: number;
   tokens: number;
@@ -156,6 +158,8 @@ function aggregateStats(
     string,
     {
       sessions: number;
+      mainSessions: number;
+      subagentSessions: number;
       premiumRequests: number;
       cost: number;
       tokens: number;
@@ -167,11 +171,18 @@ function aggregateStats(
     const day = new Date(s.time.created).toISOString().slice(0, 10);
     const entry = dailyMap.get(day) || {
       sessions: 0,
+      mainSessions: 0,
+      subagentSessions: 0,
       premiumRequests: 0,
       cost: 0,
       tokens: 0,
     };
     entry.sessions++;
+    if (subagentIDs.has(s.id)) {
+      entry.subagentSessions++;
+    } else {
+      entry.mainSessions++;
+    }
     dailyMap.set(day, entry);
   }
 
@@ -207,6 +218,8 @@ function aggregateStats(
         const day = new Date(info.time.created).toISOString().slice(0, 10);
         const dayEntry = dailyMap.get(day) || {
           sessions: 0,
+          mainSessions: 0,
+          subagentSessions: 0,
           premiumRequests: 0,
           cost: 0,
           tokens: 0,
@@ -268,6 +281,8 @@ function aggregateStats(
         const day = new Date(info.time.created).toISOString().slice(0, 10);
         const dayEntry = dailyMap.get(day) || {
           sessions: 0,
+          mainSessions: 0,
+          subagentSessions: 0,
           premiumRequests: 0,
           cost: 0,
           tokens: 0,
@@ -359,6 +374,8 @@ function aggregateStats(
     .map(([date, d]) => ({
       date,
       sessions: d.sessions,
+      mainSessions: d.mainSessions,
+      subagentSessions: d.subagentSessions,
       premiumRequests: d.premiumRequests,
       cost: d.cost,
       tokens: d.tokens,
