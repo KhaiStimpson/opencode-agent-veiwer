@@ -141,7 +141,7 @@ export function SessionDetail({
 
         <Tabs.Panel value="info" style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex" }}>
           <ScrollArea p="md" style={{ flex: 1 }} offsetScrollbars>
-            <TokenSummary messages={messages} />
+            <TokenSummary messages={messages} session={session} />
           </ScrollArea>
         </Tabs.Panel>
       </Tabs>

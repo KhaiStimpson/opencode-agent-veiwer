@@ -18,7 +18,7 @@ import {
   ArrowsClockwise,
 } from "@phosphor-icons/react";
 import { formatTokens, formatCost } from "../lib/opencode";
-import type { Message, Part } from "../types";
+import type { Message, Part, Session } from "../types";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -31,6 +31,7 @@ interface MessageWithParts {
 
 interface TokenSummaryProps {
   messages: MessageWithParts[];
+  session: Session | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,8 +162,22 @@ function aggregateTokens(messages: MessageWithParts[]): TokenTotals {
 }
 
 function aggregatePremiumRequests(
-  messages: MessageWithParts[]
+  messages: MessageWithParts[],
+  isSubagent: boolean,
 ): PremiumRequestSummary {
+  // Subagent sessions do not count as premium requests — only user-initiated
+  // prompts are billed. Return zeroed summary immediately.
+  if (isSubagent) {
+    return {
+      userPrompts: 0,
+      totalWeighted: 0,
+      byModel: [],
+      compaction: { total: 0, auto: 0, manual: 0 },
+      compactionWeighted: 0,
+      grandTotalWeighted: 0,
+    };
+  }
+
   // Count user prompts, grouped by the target model
   const modelMap = new Map<
     string,
@@ -261,13 +276,14 @@ function formatWeighted(w: number): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export function TokenSummary({ messages }: TokenSummaryProps) {
+export function TokenSummary({ messages, session }: TokenSummaryProps) {
+  const isSubagent = Boolean(session?.parentID);
   const totals = aggregateTokens(messages);
-  const premium = aggregatePremiumRequests(messages);
+  const premium = aggregatePremiumRequests(messages, isSubagent);
   const [breakdownOpen, { toggle: toggleBreakdown }] = useDisclosure(false);
 
   const hasData =
-    totals.input > 0 || totals.output > 0 || premium.userPrompts > 0;
+    totals.input > 0 || totals.output > 0 || premium.userPrompts > 0 || isSubagent;
 
   if (!hasData) {
     return (
@@ -279,6 +295,25 @@ export function TokenSummary({ messages }: TokenSummaryProps) {
 
   return (
     <Stack gap="sm">
+      {/* ---- Subagent notice ---- */}
+      {isSubagent && (
+        <Paper p="sm" withBorder radius="sm" bg="var(--mantine-color-violet-light)">
+          <Group gap="xs" wrap="nowrap">
+            <ThemeIcon size="sm" variant="light" color="violet" radius="xl">
+              <Lightning size={14} weight="fill" />
+            </ThemeIcon>
+            <Text size="sm" fw={500} c="violet">
+              Subagent — prompts not counted as premium requests
+            </Text>
+          </Group>
+          <Text size="xs" c="dimmed" mt={4}>
+            This session was spawned autonomously by a parent session. Per
+            GitHub Copilot billing, only user-initiated prompts count as
+            premium requests.
+          </Text>
+        </Paper>
+      )}
+
       {/* ---- Premium Requests ---- */}
       {premium.userPrompts > 0 && (
         <>
