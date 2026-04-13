@@ -15,6 +15,7 @@ It connects directly from the browser to a running OpenCode server with `@openco
 - Token and cost summary in the Info tab
 - Premium request estimator with per-model breakdown and compaction counts
 - Direct browser connection, no backend proxy
+- Dashboard with workspace-wide stats and charts (cost, tokens, model usage, tools, activity over time)
 
 ## Tech Stack
 
@@ -22,6 +23,9 @@ It connects directly from the browser to a running OpenCode server with `@openco
 - Vite 8
 - TypeScript
 - Mantine 9
+- `@mantine/charts` (built on `recharts`) — used for dashboard visualizations
+- `recharts` — charting peer dependency
+- `react-router` — simple route for `/dashboard`
 - `@opencode-ai/sdk`
 - `@phosphor-icons/react`
 
@@ -53,6 +57,8 @@ npm run dev
 Open `http://localhost:5173`, enter the OpenCode server URL if needed, and connect.
 
 The default server URL in the app is `http://localhost:4096`.
+
+Tip: after connecting you can switch to the Dashboard view using the Sessions/Dashboard toggle in the header (top-right), or navigate directly to `/dashboard`.
 
 ## Scripts
 
@@ -127,6 +133,7 @@ Reference:
 - Premium request counts are estimated, not guaranteed billing truth
 - Unknown models fall back to a `1x` multiplier in the estimator
 - The UI is optimized for local development against a local OpenCode server
+- Dashboard includes client-side charts (recharts) which increase the bundle size; you may see a chunk-size warning during build
 
 ## Project Structure
 
@@ -144,11 +151,14 @@ src/
     TodoList.tsx
     TokenSummary.tsx
     ToolCallPart.tsx
+    Dashboard.tsx
+    StatCard.tsx
   hooks/
     useEvents.ts
     useOpencode.tsx
     useSessionDetail.ts
     useSessions.ts
+    useDashboard.ts
   lib/
     opencode.ts
   types/
