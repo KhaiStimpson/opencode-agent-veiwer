@@ -586,6 +586,7 @@ export function ContextWindow({
   const { data: chartData, compactionTurns } = buildChartData(contextData, contextLimit);
   const stepTokens = extractStepTokens(messages);
   const compactions = extractCompactions(messages);
+  const [stepTokensOpen, { toggle: toggleStepTokens }] = useDisclosure(false);
 
   // Count assistant messages (turns)
   const assistantCount = messages.filter(
@@ -846,66 +847,78 @@ export function ContextWindow({
       {/* ---- Step-Level Token Breakdown ---- */}
       {stepTokens.length > 0 && (
         <Paper p="sm" withBorder radius="sm">
-          <Group gap="xs" mb="xs" wrap="nowrap">
-            <ThemeIcon size="sm" variant="light" color="teal" radius="xl">
-              <Lightning size={14} weight="fill" />
-            </ThemeIcon>
-            <Text size="sm" fw={600}>
-              Per-Step Token Breakdown
-            </Text>
-            <Badge size="xs" variant="light" color="gray">
-              {stepTokens.length} steps
-            </Badge>
-          </Group>
-          <Table striped highlightOnHover fz="xs">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Step</Table.Th>
-                <Table.Th style={{ textAlign: "right" }}>Input</Table.Th>
-                <Table.Th style={{ textAlign: "right" }}>Output</Table.Th>
-                <Table.Th style={{ textAlign: "right" }}>
-                  {hasLimits ? "Utilization" : "Total"}
-                </Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {stepTokens.map((step, i) => {
-                const stepPct =
-                  contextLimit > 0
-                    ? (step.inputTokens / contextLimit) * 100
-                    : 0;
-                return (
-                  <Table.Tr key={i}>
-                    <Table.Td>
-                      <Text size="xs">
-                        Turn {step.messageIndex + 1}, Step{" "}
-                        {step.stepIndex + 1}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: "right" }}>
-                      {formatTokens(step.inputTokens)}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: "right" }}>
-                      {formatTokens(step.outputTokens)}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: "right" }}>
-                      {hasLimits ? (
-                        <Badge
-                          size="xs"
-                          variant="light"
-                          color={getUtilizationColor(stepPct)}
-                        >
-                          {stepPct.toFixed(1)}%
-                        </Badge>
-                      ) : (
-                        formatTokens(step.inputTokens + step.outputTokens)
-                      )}
-                    </Table.Td>
-                  </Table.Tr>
-                );
-              })}
-            </Table.Tbody>
-          </Table>
+          <UnstyledButton
+            onClick={toggleStepTokens}
+            style={{ width: "100%", display: "block" }}
+          >
+            <Group gap="xs" wrap="nowrap">
+              <ThemeIcon size="sm" variant="light" color="teal" radius="xl">
+                <Lightning size={14} weight="fill" />
+              </ThemeIcon>
+              <Text size="sm" fw={600} style={{ flex: 1 }}>
+                Per-Step Token Breakdown
+              </Text>
+              <Badge size="xs" variant="light" color="gray">
+                {stepTokens.length} steps
+              </Badge>
+              {stepTokensOpen ? (
+                <CaretDown size={14} />
+              ) : (
+                <CaretRight size={14} />
+              )}
+            </Group>
+          </UnstyledButton>
+          <Collapse expanded={stepTokensOpen}>
+            <Table striped highlightOnHover fz="xs" mt="xs">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Step</Table.Th>
+                  <Table.Th style={{ textAlign: "right" }}>Input</Table.Th>
+                  <Table.Th style={{ textAlign: "right" }}>Output</Table.Th>
+                  <Table.Th style={{ textAlign: "right" }}>
+                    {hasLimits ? "Utilization" : "Total"}
+                  </Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {stepTokens.map((step, i) => {
+                  const stepPct =
+                    contextLimit > 0
+                      ? (step.inputTokens / contextLimit) * 100
+                      : 0;
+                  return (
+                    <Table.Tr key={i}>
+                      <Table.Td>
+                        <Text size="xs">
+                          Turn {step.messageIndex + 1}, Step{" "}
+                          {step.stepIndex + 1}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: "right" }}>
+                        {formatTokens(step.inputTokens)}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: "right" }}>
+                        {formatTokens(step.outputTokens)}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: "right" }}>
+                        {hasLimits ? (
+                          <Badge
+                            size="xs"
+                            variant="light"
+                            color={getUtilizationColor(stepPct)}
+                          >
+                            {stepPct.toFixed(1)}%
+                          </Badge>
+                        ) : (
+                          formatTokens(step.inputTokens + step.outputTokens)
+                        )}
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </Collapse>
         </Paper>
       )}
 
