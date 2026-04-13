@@ -17,6 +17,12 @@ interface UseSessionsResult {
   handleEvent: (event: Event) => void;
 }
 
+/** Check if any descendant (at any depth) is busy */
+function hasActiveBusy(node: SessionNode): boolean {
+  if (node.status.type === "busy") return true;
+  return node.children.some(hasActiveBusy);
+}
+
 function buildTree(
   sessions: Session[],
   statusMap: SessionStatusMap
@@ -34,7 +40,7 @@ function buildTree(
 
   const roots: SessionNode[] = [];
 
-  // Link parents
+  // Link parents — works for arbitrary depth
   for (const node of byId.values()) {
     const parentId = node.session.parentID;
     if (parentId && byId.has(parentId)) {
@@ -44,7 +50,7 @@ function buildTree(
     }
   }
 
-  // Sort by most recently updated first
+  // Sort by most recently updated first (recursive)
   const sortNodes = (nodes: SessionNode[]) => {
     nodes.sort(
       (a, b) => b.session.time.updated - a.session.time.updated
@@ -56,6 +62,9 @@ function buildTree(
   return roots;
 }
 
+// How often to poll for session list / status updates (ms)
+const POLL_INTERVAL = 3000;
+
 export function useSessions(client: OpencodeClient | null): UseSessionsResult {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [statusMap, setStatusMap] = useState<SessionStatusMap>({});
@@ -64,7 +73,24 @@ export function useSessions(client: OpencodeClient | null): UseSessionsResult {
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
 
-  // Fetch all sessions and status on connect
+  // Shared fetch for initial load and polling
+  const fetchSessions = useCallback(async () => {
+    if (!client) return null;
+    try {
+      const [sessRes, statusRes] = await Promise.all([
+        client.session.list(),
+        client.session.status(),
+      ]);
+      return {
+        sessions: sessRes.data ?? [],
+        statusMap: (statusRes.data ?? {}) as SessionStatusMap,
+      };
+    } catch {
+      return null;
+    }
+  }, [client]);
+
+  // Initial fetch on connect
   useEffect(() => {
     if (!client) {
       setSessions([]);
@@ -77,33 +103,37 @@ export function useSessions(client: OpencodeClient | null): UseSessionsResult {
 
     async function load() {
       setLoading(true);
-      try {
-        const [sessRes, statusRes] = await Promise.all([
-          client!.session.list(),
-          client!.session.status(),
-        ]);
-
-        if (cancelled) return;
-
-        if (sessRes.data) {
-          setSessions(sessRes.data);
-        }
-        if (statusRes.data) {
-          setStatusMap(statusRes.data as SessionStatusMap);
-        }
-      } catch {
-        // ignore - connection might not be ready
-      } finally {
+      const result = await fetchSessions();
+      if (cancelled || !result) {
         if (!cancelled) setLoading(false);
+        return;
       }
+      setSessions(result.sessions);
+      setStatusMap(result.statusMap);
+      setLoading(false);
     }
 
     load();
     return () => {
       cancelled = true;
     };
-  }, [client]);
+  }, [client, fetchSessions]);
 
+  // Polling fallback — keeps sidebar in sync even if SSE is unreliable
+  useEffect(() => {
+    if (!client) return;
+
+    const interval = setInterval(async () => {
+      const result = await fetchSessions();
+      if (!result) return;
+      setSessions(result.sessions);
+      setStatusMap(result.statusMap);
+    }, POLL_INTERVAL);
+
+    return () => clearInterval(interval);
+  }, [client, fetchSessions]);
+
+  // SSE event handler for lower-latency updates
   const handleEvent = useCallback((event: Event) => {
     switch (event.type) {
       case "session.created":
@@ -156,3 +186,5 @@ export function useSessions(client: OpencodeClient | null): UseSessionsResult {
     handleEvent,
   };
 }
+
+export { hasActiveBusy };

@@ -2,6 +2,7 @@ import { NavLink, Badge, Loader } from "@mantine/core";
 
 import type { SessionNode } from "../types";
 import { formatRelativeTime } from "../lib/opencode";
+import { hasActiveBusy } from "../hooks/useSessions";
 
 interface SessionNavItemProps {
   node: SessionNode;
@@ -51,7 +52,7 @@ export function SessionNavItem({
       active={session.id === selectedId}
       onClick={() => onSelect(session.id)}
       childrenOffset={depth < 3 ? 20 : 0}
-      defaultOpened={isBusy || children.some((c) => c.status.type === "busy")}
+      defaultOpened={hasActiveBusy(node)}
       variant="subtle"
     >
       {children.map((child) => (
