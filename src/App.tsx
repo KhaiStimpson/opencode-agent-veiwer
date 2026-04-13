@@ -12,6 +12,7 @@ import { OpencodeProvider, useOpencode } from "./hooks/useOpencode";
 import { useEvents } from "./hooks/useEvents";
 import { useSessions } from "./hooks/useSessions";
 import { useSessionDetail } from "./hooks/useSessionDetail";
+import { useProviders } from "./hooks/useProviders";
 import { useDashboard } from "./hooks/useDashboard";
 import { ConnectionHeader } from "./components/ConnectionHeader";
 import { SessionNav } from "./components/SessionNav";
@@ -45,6 +46,9 @@ function AppContent() {
     loading: detailLoading,
     handleEvent: handleDetailEvent,
   } = useSessionDetail(isConnected ? client : null, selectedId);
+
+  // Provider/model metadata (context window limits)
+  const { modelLimits } = useProviders(isConnected ? client : null);
 
   // Count active (busy) sessions
   const activeSessions = Object.values(statusMap).filter(
@@ -192,6 +196,7 @@ function AppContent() {
                     messages={messages}
                     todos={todos}
                     loading={detailLoading}
+                    modelLimits={modelLimits}
                     onSelectSession={selectSession}
                   />
                 }

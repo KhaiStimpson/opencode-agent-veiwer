@@ -11,11 +11,13 @@ import {
   ChatText,
   ListChecks,
   Info,
+  Brain,
 } from "@phosphor-icons/react";
 import { StatusBadge } from "./StatusBadge";
 import { MessageList } from "./MessageList";
 import { TodoList } from "./TodoList";
 import { TokenSummary } from "./TokenSummary";
+import { ContextWindow } from "./ContextWindow";
 import { EmptyState } from "./EmptyState";
 import { formatRelativeTime } from "../lib/opencode";
 import type { Session, SessionStatus, Message, Part, Todo } from "../types";
@@ -31,6 +33,7 @@ interface SessionDetailProps {
   messages: MessageWithParts[];
   todos: Todo[];
   loading: boolean;
+  modelLimits: Map<string, { context: number; output: number }>;
   onSelectSession?: (id: string) => void;
 }
 
@@ -40,6 +43,7 @@ export function SessionDetail({
   messages,
   todos,
   loading,
+  modelLimits,
   onSelectSession,
 }: SessionDetailProps) {
   if (!session) {
@@ -120,6 +124,9 @@ export function SessionDetail({
           <Tabs.Tab value="info" leftSection={<Info size={14} />}>
             Info
           </Tabs.Tab>
+          <Tabs.Tab value="context" leftSection={<Brain size={14} />}>
+            Context
+          </Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel
@@ -142,6 +149,12 @@ export function SessionDetail({
         <Tabs.Panel value="info" style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex" }}>
           <ScrollArea p="md" style={{ flex: 1 }} offsetScrollbars>
             <TokenSummary messages={messages} session={session} />
+          </ScrollArea>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="context" style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex" }}>
+          <ScrollArea p="md" style={{ flex: 1 }} offsetScrollbars>
+            <ContextWindow messages={messages} modelLimits={modelLimits} />
           </ScrollArea>
         </Tabs.Panel>
       </Tabs>

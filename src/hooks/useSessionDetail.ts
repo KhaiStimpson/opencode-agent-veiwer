@@ -173,9 +173,21 @@ export function useSessionDetail(
           setTodos(event.properties.todos);
           break;
         }
+
+        case "session.compacted": {
+          // After compaction, old messages are removed and a summary replaces
+          // them. Re-fetch the full message list to get the updated state.
+          if (event.properties.sessionID !== sessionId) return;
+          fetchDetail(sessionId).then((result) => {
+            if (!result || currentSessionRef.current !== sessionId) return;
+            setMessages(result.messages);
+            setTodos(result.todos);
+          });
+          break;
+        }
       }
     },
-    [sessionId]
+    [sessionId, fetchDetail]
   );
 
   return { messages, todos, loading, handleEvent };

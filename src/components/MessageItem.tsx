@@ -1,7 +1,7 @@
-import { Paper, Group, Text, Badge, Stack, Accordion, Code } from "@mantine/core";
-import { User, Robot } from "@phosphor-icons/react";
+import { Paper, Group, Text, Badge, Stack, Accordion, Code, Divider } from "@mantine/core";
+import { User, Robot, ArrowsClockwise, Lightning } from "@phosphor-icons/react";
 import { ToolCallPartComponent } from "./ToolCallPart";
-import { formatRelativeTime } from "../lib/opencode";
+import { formatRelativeTime, formatTokens } from "../lib/opencode";
 import type { Message, Part } from "../types";
 
 interface MessageItemProps {
@@ -17,6 +17,8 @@ export function MessageItem({ info, parts, onSelectSession }: MessageItemProps) 
   const toolParts = parts.filter((p) => p.type === "tool");
   const agentParts = parts.filter((p) => p.type === "agent");
   const subtaskParts = parts.filter((p) => p.type === "subtask");
+  const compactionParts = parts.filter((p) => p.type === "compaction");
+  const stepFinishParts = parts.filter((p) => p.type === "step-finish");
 
   return (
     <Paper
@@ -148,6 +150,54 @@ export function MessageItem({ info, parts, onSelectSession }: MessageItemProps) 
               </Code>
             )}
           </Paper>
+        )}
+
+        {/* Compaction markers */}
+        {compactionParts.length > 0 && (
+          <Divider
+            label={
+              <Group gap={4} wrap="nowrap">
+                <ArrowsClockwise size={12} weight="bold" />
+                <Text size="xs" fw={600}>
+                  Context compacted
+                </Text>
+                {compactionParts.map((p) =>
+                  p.type === "compaction" ? (
+                    <Badge
+                      key={p.id}
+                      size="xs"
+                      variant="light"
+                      color={p.auto ? "blue" : "violet"}
+                    >
+                      {p.auto ? "auto" : "manual"}
+                    </Badge>
+                  ) : null
+                )}
+              </Group>
+            }
+            labelPosition="center"
+            color="orange"
+            variant="dashed"
+          />
+        )}
+
+        {/* Step-finish token annotations */}
+        {stepFinishParts.length > 0 && (
+          <Group gap={4} wrap="wrap">
+            <Lightning size={12} weight="bold" color="var(--mantine-color-teal-6)" />
+            {stepFinishParts.map((p) =>
+              p.type === "step-finish" ? (
+                <Badge
+                  key={p.id}
+                  size="xs"
+                  variant="light"
+                  color="teal"
+                >
+                  step: {formatTokens(p.tokens.input)} in / {formatTokens(p.tokens.output)} out
+                </Badge>
+              ) : null
+            )}
+          </Group>
         )}
       </Stack>
     </Paper>
