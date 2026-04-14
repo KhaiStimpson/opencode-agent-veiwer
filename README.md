@@ -6,6 +6,14 @@ Read-only web UI for monitoring OpenCode sessions and subagents in real time.
 
 It connects directly from the browser to a running OpenCode server with `@opencode-ai/sdk`, shows the session tree in a sidebar, and renders messages, todos, token usage, cost, and premium-request estimates in the main panel.
 
+## Screenshots
+
+### Dark Mode
+![OpenCode Agent Viewer — dark mode](https://github.com/user-attachments/assets/ff09b4a9-f00d-42b3-bcdc-1a35a2f1ddfc)
+
+### Light Mode
+![OpenCode Agent Viewer — light mode](https://github.com/user-attachments/assets/be1479f7-2984-48ac-95c9-c0295c5aab5e)
+
 ## Features
 
 - Live session tree with parent/child subagent nesting
