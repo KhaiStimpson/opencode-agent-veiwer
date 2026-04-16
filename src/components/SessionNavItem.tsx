@@ -1,4 +1,4 @@
-import { NavLink, Badge, Loader } from "@mantine/core";
+import { NavLink, Badge, Loader, Box } from "@mantine/core";
 import { memo } from "react";
 
 import type { SessionNode } from "../types";
@@ -22,20 +22,26 @@ function SessionNavItemInner({
   const isBusy = status.type === "busy";
   const isRetry = status.type === "retry";
 
-  const statusColor = isBusy ? "blue" : isRetry ? "yellow" : "gray";
-
   const leftSection = isBusy ? (
-    <Loader size={12} color="blue" />
+    <Loader size={10} color="var(--oc-amber)" />
   ) : (
-    <Badge
-      size="xs"
-      circle
-      color={statusColor}
-      variant="filled"
-      styles={{ root: { width: 10, height: 10, minWidth: 10, padding: 0 } }}
-    >
-      {" "}
-    </Badge>
+    <Box
+      style={{
+        width: 7,
+        height: 7,
+        borderRadius: "50%",
+        background: isRetry
+          ? "var(--oc-amber-dim)"
+          : "var(--oc-text-muted)",
+        boxShadow: isBusy
+          ? "0 0 6px var(--oc-amber)"
+          : isRetry
+            ? "0 0 4px var(--oc-amber-dim)"
+            : "none",
+        opacity: isBusy || isRetry ? 1 : 0.4,
+        transition: "all 0.3s ease",
+      }}
+    />
   );
 
   return (
@@ -45,7 +51,19 @@ function SessionNavItemInner({
       leftSection={leftSection}
       rightSection={
         children.length > 0 ? (
-          <Badge size="xs" variant="light" color="gray" circle>
+          <Badge
+            size="xs"
+            variant="light"
+            color="gray"
+            circle
+            styles={{
+              root: {
+                background: "rgba(255, 255, 255, 0.04)",
+                border: "1px solid var(--oc-border)",
+                color: "var(--oc-text-muted)",
+              },
+            }}
+          >
             {children.length}
           </Badge>
         ) : undefined
