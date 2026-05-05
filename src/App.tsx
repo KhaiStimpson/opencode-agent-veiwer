@@ -46,13 +46,13 @@ function getAllDescendantIds(node: SessionNode): string[] {
 
 function AppContent() {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(true);
-  const { client, connection, connect, disconnect } = useOpencode();
+  const { activeClient, activeConnection } = useOpencode();
   const navigate = useNavigate();
   const location = useLocation();
 
   const isDashboard = location.pathname === "/dashboard";
 
-  const isConnected = connection.status === "connected";
+  const isConnected = activeConnection?.status === "connected";
 
   // SSE event stream — called early so sseConnected is available for polling hooks.
   // useEvents uses a ref internally for onEvent, so the callback can be updated below.
@@ -62,7 +62,7 @@ function AppContent() {
     [],
   );
   const { sseConnected } = useEvents({
-    client: isConnected ? client : null,
+    client: isConnected ? activeClient : null,
     onEvent: stableOnEvent,
     enabled: isConnected,
   });
@@ -75,7 +75,7 @@ function AppContent() {
     selectSession,
     loading: sessionsLoading,
     handleEvent: handleSessionEvent,
-  } = useSessions(isConnected ? client : null, sseConnected);
+  } = useSessions(isConnected ? activeClient : null, sseConnected);
 
   // Find selected session object — memoized to avoid recursive search on every render
   const selectedNode = useMemo(
@@ -100,7 +100,7 @@ function AppContent() {
     loading: detailLoading,
     handleEvent: handleDetailEvent,
     subagentMessages,
-  } = useSessionDetail(isConnected ? client : null, selectedId, sseConnected, childSessionIds);
+  } = useSessionDetail(isConnected ? activeClient : null, selectedId, sseConnected, childSessionIds);
 
   // Keep the event handler ref in sync with the latest handlers
   useEffect(() => {
@@ -111,7 +111,7 @@ function AppContent() {
   });
 
   // Provider/model metadata (context window limits)
-  const { modelLimits } = useProviders(isConnected ? client : null);
+  const { modelLimits } = useProviders(isConnected ? activeClient : null);
 
   // Count active (busy) sessions — memoized to avoid recalculating on every render
   const activeSessions = useMemo(
@@ -126,7 +126,7 @@ function AppContent() {
     progress: dashboardProgress,
     refresh: refreshDashboard,
   } = useDashboard(
-    isConnected && isDashboard ? client : null,
+    isConnected && isDashboard ? activeClient : null,
     isDashboard ? sessions : [],
     activeSessions,
   );
@@ -158,11 +158,7 @@ function AppContent() {
                 size="sm"
               />
             )}
-            <ConnectionHeader
-              connection={connection}
-              onConnect={connect}
-              onDisconnect={disconnect}
-            />
+            <ConnectionHeader />
           </Group>
           {isConnected && (
             <SegmentedControl
@@ -200,7 +196,7 @@ function AppContent() {
       >
         <div style={{ flex: 1, position: "relative", overflow: "hidden", height: "100%" }}>
           <LoadingOverlay
-            visible={connection.status === "connecting"}
+            visible={activeConnection?.status === "connecting"}
             zIndex={1000}
             overlayProps={{ blur: 2 }}
           />
