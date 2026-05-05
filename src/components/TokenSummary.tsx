@@ -441,13 +441,14 @@ export function TokenSummary({ messages, session, subagentMessages }: TokenSumma
   const displayCost = estimatedTotalCost > 0 ? estimatedTotalCost : totals.cost;
   const costIsEstimated = estimatedTotalCost > 0 && totals.cost === 0;
 
-  const subagentCount = subagentMessages && subagentMessages.length > 0
-    ? new Set(
-        subagentMessages
-          .filter((m) => m.info.role === "assistant")
-          .map((m) => m.info.sessionID),
-      ).size
-    : 0;
+  const subagentCount =
+    subagentMessages && subagentMessages.length > 0
+      ? new Set(
+          subagentMessages
+            .filter((m) => m.info.role === "assistant")
+            .map((m) => m.info.sessionID),
+        ).size
+      : 0;
 
   const hasData =
     totals.input > 0 || totals.output > 0 || premium.userPrompts > 0 || isSubagent;
