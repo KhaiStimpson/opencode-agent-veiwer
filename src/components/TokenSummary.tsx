@@ -37,11 +37,16 @@ interface TokenSummaryProps {
 }
 
 // ---------------------------------------------------------------------------
-// Model multiplier table (GitHub Copilot paid-plan rates, April 2026)
+// Versioned model multiplier tables
 // Source: https://docs.github.com/en/copilot/concepts/billing/copilot-requests
 // ---------------------------------------------------------------------------
 
-const MODEL_MULTIPLIERS: Record<string, number> = {
+// June 1 2026 00:00:00 UTC — the date GitHub updated the multipliers for
+// annual Copilot Pro/Pro+ subscribers on request-based billing.
+const MULTIPLIER_V2_DATE = Date.UTC(2026, 5, 1);
+
+// GitHub Copilot paid-plan rates through May 31, 2026.
+const MODEL_MULTIPLIERS_V1: Record<string, number> = {
   // Anthropic
   "claude-haiku-4.5": 0.33,
   "claude-opus-4.5": 3,
@@ -67,6 +72,41 @@ const MODEL_MULTIPLIERS: Record<string, number> = {
   // xAI
   "grok-code-fast-1": 0.25,
   // Microsoft
+  "raptor-mini": 0,
+};
+
+// GitHub Copilot paid-plan rates from June 1, 2026.
+// Applies to annual Copilot Pro/Pro+ subscribers remaining on request-based billing.
+// Source: https://docs.github.com/en/copilot/reference/copilot-billing/model-multipliers-for-annual-plans
+const MODEL_MULTIPLIERS_V2: Record<string, number> = {
+  // Anthropic — Haiku unchanged; Sonnet 9x; Opus 27x
+  "claude-haiku-4.5": 0.33,
+  "claude-opus-4.5": 27,
+  "claude-opus-4.6": 27,
+  "claude-opus-4.7": 27,
+  "claude-sonnet-4": 9,
+  "claude-sonnet-4.5": 9,
+  "claude-sonnet-4.6": 9,
+  // Google — Flash rises to 1x; Pro models rise to 6x; Gemini 2.5 Pro rises to 5x
+  "gemini-2.5-pro": 5,
+  "gemini-3-flash": 1,
+  "gemini-3.1-pro": 6,
+  // OpenAI — included models unchanged (0x)
+  "gpt-4.1": 0,
+  "gpt-4o": 0,
+  "gpt-5-mini": 0,
+  // OpenAI — premium (older models unchanged; GPT-5.3 Codex rises to 6x)
+  "gpt-5.1": 1,
+  "gpt-5.2": 1,
+  "gpt-5.2-codex": 1,
+  "gpt-5.3-codex": 6,
+  "gpt-5.4": 1,
+  "gpt-5.4-mini": 0.33,
+  // GPT-5.5 added at promotional multiplier
+  "gpt-5.5": 7.5,
+  // xAI — unchanged
+  "grok-code-fast-1": 0.25,
+  // Microsoft — unchanged
   "raptor-mini": 0,
 };
 
@@ -151,26 +191,31 @@ function estimateCostFromPricing(
   );
 }
 
+function getMultiplierTable(timestampMs: number): Record<string, number> {
+  return timestampMs >= MULTIPLIER_V2_DATE ? MODEL_MULTIPLIERS_V2 : MODEL_MULTIPLIERS_V1;
+}
+
 /**
- * Normalise an SDK modelID to a key in MODEL_MULTIPLIERS.
- * The SDK may return IDs like "anthropic/claude-sonnet-4" or "claude-sonnet-4",
- * possibly with extra version suffixes. We strip prefixes and try progressively
- * shorter suffixes until we get a match.
+ * Return the premium-request multiplier for a given model at a given point in
+ * time. The SDK may return IDs like "anthropic/claude-sonnet-4" or
+ * "claude-sonnet-4", possibly with extra version suffixes. We strip provider
+ * prefixes and try progressively shorter suffix segments until we find a match.
  */
-function getMultiplier(modelID: string): number {
+function getMultiplier(modelID: string, timestampMs: number): number {
+  const table = getMultiplierTable(timestampMs);
   const raw = modelID.toLowerCase().trim();
 
   // Strip provider prefix (e.g. "anthropic/claude-sonnet-4" -> "claude-sonnet-4")
   const withoutPrefix = raw.includes("/") ? raw.split("/").pop()! : raw;
 
   // Direct match
-  if (withoutPrefix in MODEL_MULTIPLIERS) return MODEL_MULTIPLIERS[withoutPrefix];
+  if (withoutPrefix in table) return table[withoutPrefix];
 
   // Try stripping trailing segments (e.g. "claude-sonnet-4-20250514" -> "claude-sonnet-4")
   const segments = withoutPrefix.split("-");
   for (let len = segments.length - 1; len >= 2; len--) {
     const candidate = segments.slice(0, len).join("-");
-    if (candidate in MODEL_MULTIPLIERS) return MODEL_MULTIPLIERS[candidate];
+    if (candidate in table) return table[candidate];
   }
 
   return DEFAULT_MULTIPLIER;
@@ -330,10 +375,13 @@ function aggregatePremiumRequests(
     };
   }
 
-  // Count user prompts, grouped by the target model
+  // Count user prompts, grouped by the target model.
+  // weightedSum accumulates the per-message multiplier contributions so that
+  // messages sent before and after the June 2026 rate change are each billed
+  // at the rate that was in effect at the time they were sent.
   const modelMap = new Map<
     string,
-    { providerID: string; count: number }
+    { providerID: string; count: number; weightedSum: number }
   >();
   let userPrompts = 0;
 
@@ -341,15 +389,18 @@ function aggregatePremiumRequests(
     if (info.role !== "user") continue;
     userPrompts++;
 
+    const timestampMs = info.time.created;
     const modelID = info.model.modelID;
     const providerID = info.model.providerID;
     const key = `${providerID}/${modelID}`;
+    const msgMultiplier = getMultiplier(modelID, timestampMs);
 
     const existing = modelMap.get(key);
     if (existing) {
       existing.count++;
+      existing.weightedSum += msgMultiplier;
     } else {
-      modelMap.set(key, { providerID, count: 1 });
+      modelMap.set(key, { providerID, count: 1, weightedSum: msgMultiplier });
     }
   }
 
@@ -357,10 +408,13 @@ function aggregatePremiumRequests(
   const byModel: ModelBreakdown[] = [];
   let totalWeighted = 0;
 
-  for (const [key, { providerID, count }] of modelMap) {
+  for (const [key, { providerID, count, weightedSum }] of modelMap) {
     const modelID = key.includes("/") ? key.split("/").slice(1).join("/") : key;
-    const multiplier = getMultiplier(modelID);
-    const weighted = count * multiplier;
+    // Average multiplier across all prompts for this model. When prompts for
+    // the same model span both rate periods (V1 and V2), this will be a
+    // blended value rather than either table's direct lookup.
+    const multiplier = weightedSum / count;
+    const weighted = weightedSum;
     totalWeighted += weighted;
 
     byModel.push({
