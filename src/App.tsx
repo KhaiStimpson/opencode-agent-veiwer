@@ -34,6 +34,16 @@ function findSession(
   return null;
 }
 
+/** Collect IDs of all descendant nodes (children, grandchildren, etc.) */
+function getAllDescendantIds(node: SessionNode): string[] {
+  const ids: string[] = [];
+  for (const child of node.children) {
+    ids.push(child.session.id);
+    ids.push(...getAllDescendantIds(child));
+  }
+  return ids;
+}
+
 function AppContent() {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(true);
   const { client, connection, connect, disconnect } = useOpencode();
@@ -67,12 +77,30 @@ function AppContent() {
     handleEvent: handleSessionEvent,
   } = useSessions(isConnected ? client : null, sseConnected);
 
+  // Find selected session object — memoized to avoid recursive search on every render
+  const selectedNode = useMemo(
+    () => (selectedId ? findSession(tree, selectedId) : null),
+    [tree, selectedId],
+  );
+  const selectedSession = selectedNode?.session ?? null;
+  const selectedStatus: SessionStatus = selectedId
+    ? statusMap[selectedId] || { type: "idle" }
+    : { type: "idle" };
+
+  // Descendant (subagent) session IDs for the selected session — used to load
+  // their messages so the Info tab can show the full token breakdown.
+  const childSessionIds = useMemo(
+    () => (selectedNode ? getAllDescendantIds(selectedNode) : []),
+    [selectedNode],
+  );
+
   const {
     messages,
     todos,
     loading: detailLoading,
     handleEvent: handleDetailEvent,
-  } = useSessionDetail(isConnected ? client : null, selectedId, sseConnected);
+    subagentMessages,
+  } = useSessionDetail(isConnected ? client : null, selectedId, sseConnected, childSessionIds);
 
   // Keep the event handler ref in sync with the latest handlers
   useEffect(() => {
@@ -102,16 +130,6 @@ function AppContent() {
     isDashboard ? sessions : [],
     activeSessions,
   );
-
-  // Find selected session object — memoized to avoid recursive search on every render
-  const selectedNode = useMemo(
-    () => (selectedId ? findSession(tree, selectedId) : null),
-    [tree, selectedId],
-  );
-  const selectedSession = selectedNode?.session ?? null;
-  const selectedStatus: SessionStatus = selectedId
-    ? statusMap[selectedId] || { type: "idle" }
-    : { type: "idle" };
 
   const handleViewChange = (value: string) => {
     navigate(value === "dashboard" ? "/dashboard" : "/");
@@ -210,6 +228,7 @@ function AppContent() {
                     loading={detailLoading}
                     modelLimits={modelLimits}
                     onSelectSession={selectSession}
+                    subagentMessages={subagentMessages}
                   />
                 }
               />

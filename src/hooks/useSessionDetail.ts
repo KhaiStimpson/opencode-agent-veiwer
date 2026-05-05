@@ -12,6 +12,7 @@ interface UseSessionDetailResult {
   todos: Todo[];
   loading: boolean;
   handleEvent: (event: Event) => void;
+  subagentMessages: MessageWithParts[];
 }
 
 // How often to poll for updates (ms)
@@ -37,10 +38,12 @@ export function useSessionDetail(
   client: OpencodeClient | null,
   sessionId: string | null,
   sseConnected: boolean,
+  childSessionIds: string[] = [],
 ): UseSessionDetailResult {
   const [messages, setMessages] = useState<MessageWithParts[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [subagentMessages, setSubagentMessages] = useState<MessageWithParts[]>([]);
   const currentSessionRef = useRef(sessionId);
   currentSessionRef.current = sessionId;
   const lastMsgsFpRef = useRef("");
@@ -127,6 +130,41 @@ export function useSessionDetail(
 
     return () => clearInterval(interval);
   }, [client, sessionId, fetchDetail, sseConnected]);
+
+  // Load messages from child (subagent) sessions so that parent session views
+  // show the full token breakdown including all spawned subagents.
+  const childIdsKey = [...childSessionIds].sort().join(",");
+  useEffect(() => {
+    if (!client || !childIdsKey) {
+      setSubagentMessages([]);
+      return;
+    }
+
+    const ids = childIdsKey.split(",");
+    let cancelled = false;
+
+    async function loadChildren() {
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const res = await client!.session.messages({ path: { id } });
+            return (res.data ?? []) as MessageWithParts[];
+          } catch {
+            return [];
+          }
+        }),
+      );
+      if (!cancelled) {
+        setSubagentMessages(results.flat());
+      }
+    }
+
+    loadChildren();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, childIdsKey]);
 
   // Also handle SSE events for lower-latency updates
   const handleEvent = useCallback(
@@ -223,5 +261,5 @@ export function useSessionDetail(
     [sessionId, fetchDetail]
   );
 
-  return { messages, todos, loading, handleEvent };
+  return { messages, todos, loading, handleEvent, subagentMessages };
 }

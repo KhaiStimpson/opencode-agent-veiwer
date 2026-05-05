@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { OpencodeClient } from "../lib/opencode";
 import type { Session, Message, Part } from "../types";
+import { getModelPricing, estimateCostFromPricing } from "../lib/pricing";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -234,7 +235,24 @@ function aggregateStats(
         totalTokens.reasoning += info.tokens.reasoning;
         totalTokens.cacheRead += info.tokens.cache.read;
         totalTokens.cacheWrite += info.tokens.cache.write;
-        totalCost += info.cost;
+
+        // Use estimated cost from the pricing table when the API reports 0.
+        let effectiveCost = info.cost;
+        if (effectiveCost === 0) {
+          const pricing = getModelPricing(info.modelID);
+          if (pricing) {
+            effectiveCost = estimateCostFromPricing(
+              {
+                input: info.tokens.input,
+                output: info.tokens.output,
+                cacheRead: info.tokens.cache.read,
+                cacheWrite: info.tokens.cache.write,
+              },
+              pricing,
+            );
+          }
+        }
+        totalCost += effectiveCost;
 
         const modelID = info.modelID;
         const providerID = info.providerID;
@@ -259,7 +277,7 @@ function aggregateStats(
         ms.tokens.reasoning += info.tokens.reasoning;
         ms.tokens.cacheRead += info.tokens.cache.read;
         ms.tokens.cacheWrite += info.tokens.cache.write;
-        ms.cost += info.cost;
+        ms.cost += effectiveCost;
         ms.messageCount++;
 
         // Response time
@@ -287,7 +305,7 @@ function aggregateStats(
           cost: 0,
           tokens: 0,
         };
-        dayEntry.cost += info.cost;
+        dayEntry.cost += effectiveCost;
         dayEntry.tokens += info.tokens.input + info.tokens.output;
         dailyMap.set(day, dayEntry);
       }
