@@ -20,6 +20,7 @@ import {
 } from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { formatTokens, formatCost } from "../lib/opencode";
+import { getModelPricing, estimateCostFromPricing } from "../lib/pricing";
 import type { Message, Part, Session } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,8 @@ interface MessageWithParts {
 interface TokenSummaryProps {
   messages: MessageWithParts[];
   session: Session | null;
+  /** Messages from all descendant (subagent) sessions, for parent sessions. */
+  subagentMessages?: MessageWithParts[];
 }
 
 // ---------------------------------------------------------------------------
@@ -111,85 +114,6 @@ const MODEL_MULTIPLIERS_V2: Record<string, number> = {
 };
 
 const DEFAULT_MULTIPLIER = 1;
-
-// ---------------------------------------------------------------------------
-// Per-token pricing table (GitHub Copilot, May 2026)
-// Source: https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
-// All prices in USD per 1 million tokens.
-// ---------------------------------------------------------------------------
-
-interface ModelPricing {
-  /** Input tokens (fresh, non-cached) */
-  input: number;
-  /** Cached input tokens */
-  cachedInput: number;
-  /** Cache write tokens (Anthropic only; undefined for other providers) */
-  cacheWrite?: number;
-  /** Output tokens */
-  output: number;
-}
-
-const MODEL_PRICING: Record<string, ModelPricing> = {
-  // OpenAI
-  "gpt-4.1": { input: 2.0, cachedInput: 0.5, output: 8.0 },
-  "gpt-5-mini": { input: 0.25, cachedInput: 0.025, output: 2.0 },
-  "gpt-5.2": { input: 1.75, cachedInput: 0.175, output: 14.0 },
-  "gpt-5.2-codex": { input: 1.75, cachedInput: 0.175, output: 14.0 },
-  "gpt-5.3-codex": { input: 1.75, cachedInput: 0.175, output: 14.0 },
-  "gpt-5.4": { input: 2.5, cachedInput: 0.25, output: 15.0 },
-  "gpt-5.4-mini": { input: 0.75, cachedInput: 0.075, output: 4.5 },
-  "gpt-5.4-nano": { input: 0.2, cachedInput: 0.02, output: 1.25 },
-  "gpt-5.5": { input: 5.0, cachedInput: 0.5, output: 30.0 },
-  // Anthropic (cache write billed separately)
-  "claude-haiku-4.5": { input: 1.0, cachedInput: 0.1, cacheWrite: 1.25, output: 5.0 },
-  "claude-sonnet-4": { input: 3.0, cachedInput: 0.3, cacheWrite: 3.75, output: 15.0 },
-  "claude-sonnet-4.5": { input: 3.0, cachedInput: 0.3, cacheWrite: 3.75, output: 15.0 },
-  "claude-sonnet-4.6": { input: 3.0, cachedInput: 0.3, cacheWrite: 3.75, output: 15.0 },
-  "claude-opus-4.5": { input: 5.0, cachedInput: 0.5, cacheWrite: 6.25, output: 25.0 },
-  "claude-opus-4.6": { input: 5.0, cachedInput: 0.5, cacheWrite: 6.25, output: 25.0 },
-  "claude-opus-4.7": { input: 5.0, cachedInput: 0.5, cacheWrite: 6.25, output: 25.0 },
-  // Google
-  "gemini-2.5-pro": { input: 1.25, cachedInput: 0.125, output: 10.0 },
-  "gemini-3-flash": { input: 0.5, cachedInput: 0.05, output: 3.0 },
-  "gemini-3.1-pro": { input: 2.0, cachedInput: 0.2, output: 12.0 },
-  // xAI
-  "grok-code-fast-1": { input: 0.2, cachedInput: 0.02, output: 1.5 },
-  // Fine-tuned (GitHub)
-  "raptor-mini": { input: 0.25, cachedInput: 0.025, output: 2.0 },
-  "goldeneye": { input: 1.25, cachedInput: 0.125, output: 10.0 },
-};
-
-/**
- * Returns pricing for a model, using the same normalisation logic as
- * getMultiplier (strip provider prefix, try progressively shorter suffixes).
- */
-function getModelPricing(modelID: string): ModelPricing | null {
-  const raw = modelID.toLowerCase().trim();
-  const withoutPrefix = raw.includes("/") ? raw.split("/").pop()! : raw;
-
-  if (withoutPrefix in MODEL_PRICING) return MODEL_PRICING[withoutPrefix];
-
-  const segments = withoutPrefix.split("-");
-  for (let len = segments.length - 1; len >= 2; len--) {
-    const candidate = segments.slice(0, len).join("-");
-    if (candidate in MODEL_PRICING) return MODEL_PRICING[candidate];
-  }
-
-  return null;
-}
-
-function estimateCostFromPricing(
-  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number },
-  pricing: ModelPricing,
-): number {
-  const M = 1_000_000;
-  return (
-    (tokens.input / M) * pricing.input +
-    (tokens.output / M) * pricing.output +
-    (tokens.cacheRead / M) * pricing.cachedInput +
-    (tokens.cacheWrite / M) * (pricing.cacheWrite ?? pricing.cachedInput)
-  );
-}
 
 function getMultiplierTable(timestampMs: number): Record<string, number> {
   return timestampMs >= MULTIPLIER_V2_DATE ? MODEL_MULTIPLIERS_V2 : MODEL_MULTIPLIERS_V1;
@@ -482,16 +406,48 @@ function formatWeighted(w: number): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export function TokenSummary({ messages, session }: TokenSummaryProps) {
+export function TokenSummary({ messages, session, subagentMessages }: TokenSummaryProps) {
   const isSubagent = Boolean(session?.parentID);
-  const totals = useMemo(() => aggregateTokens(messages), [messages]);
-  const tokensByModel = useMemo(() => aggregateTokensByModel(messages), [messages]);
+
+  // For parent sessions, merge subagent messages into the token breakdown so
+  // that all models used across the entire session tree are visible.
+  const allMessages = useMemo(
+    () =>
+      subagentMessages && subagentMessages.length > 0
+        ? [...messages, ...subagentMessages]
+        : messages,
+    [messages, subagentMessages],
+  );
+
+  const totals = useMemo(() => aggregateTokens(allMessages), [allMessages]);
+  const tokensByModel = useMemo(() => aggregateTokensByModel(allMessages), [allMessages]);
   const premium = useMemo(
     () => aggregatePremiumRequests(messages, isSubagent),
     [messages, isSubagent],
   );
   const [breakdownOpen, { toggle: toggleBreakdown }] = useDisclosure(false);
   const [tokenModelOpen, { toggle: toggleTokenModel }] = useDisclosure(true);
+
+  // Compute estimated total cost from the pricing table (actual cost from SDK is often 0).
+  const estimatedTotalCost = useMemo(
+    () =>
+      tokensByModel.reduce(
+        (acc, m) =>
+          m.estimatedCost !== null ? acc + m.estimatedCost : acc + m.actualCost,
+        0,
+      ),
+    [tokensByModel],
+  );
+  const displayCost = estimatedTotalCost > 0 ? estimatedTotalCost : totals.cost;
+  const costIsEstimated = estimatedTotalCost > 0 && totals.cost === 0;
+
+  const subagentCount = subagentMessages && subagentMessages.length > 0
+    ? new Set(
+        subagentMessages
+          .filter((m) => m.info.role === "assistant")
+          .map((m) => m.info.sessionID),
+      ).size
+    : 0;
 
   const hasData =
     totals.input > 0 || totals.output > 0 || premium.userPrompts > 0 || isSubagent;
@@ -521,6 +477,24 @@ export function TokenSummary({ messages, session }: TokenSummaryProps) {
             This session was spawned autonomously by a parent session. Per
             GitHub Copilot billing, only user-initiated prompts count as
             premium requests.
+          </Text>
+        </Paper>
+      )}
+
+      {/* ---- Parent session subagent notice ---- */}
+      {!isSubagent && subagentCount > 0 && (
+        <Paper p="sm" withBorder radius="sm" bg="var(--mantine-color-violet-light)">
+          <Group gap="xs" wrap="nowrap">
+            <ThemeIcon size="sm" variant="light" color="violet" radius="xl">
+              <Lightning size={14} weight="fill" />
+            </ThemeIcon>
+            <Text size="sm" fw={500} c="violet">
+              Includes {subagentCount} subagent session{subagentCount !== 1 ? "s" : ""}
+            </Text>
+          </Group>
+          <Text size="xs" c="dimmed" mt={4}>
+            Token breakdown and cost below reflect the entire session tree (this
+            session + all spawned subagents).
           </Text>
         </Paper>
       )}
@@ -711,12 +685,26 @@ export function TokenSummary({ messages, session }: TokenSummaryProps) {
 
       {/* ---- Cost ---- */}
       <Paper p="sm" withBorder radius="sm">
-        <Group justify="space-between">
-          <Text size="sm" fw={500}>
-            Total Cost
-          </Text>
+        <Group justify="space-between" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap">
+            <Text size="sm" fw={500}>
+              Total Cost
+            </Text>
+            {costIsEstimated && (
+              <Tooltip label="Actual cost reported by the API was $0.00; this is estimated from the token pricing table." withArrow multiline w={240}>
+                <Badge size="xs" color="gray" variant="outline" style={{ cursor: "default" }}>
+                  est.
+                </Badge>
+              </Tooltip>
+            )}
+            {subagentCount > 0 && (
+              <Badge size="xs" color="violet" variant="light">
+                +{subagentCount} subagent{subagentCount !== 1 ? "s" : ""}
+              </Badge>
+            )}
+          </Group>
           <Badge size="lg" color="green" variant="light">
-            {formatCost(totals.cost)}
+            {formatCost(displayCost)}
           </Badge>
         </Group>
       </Paper>

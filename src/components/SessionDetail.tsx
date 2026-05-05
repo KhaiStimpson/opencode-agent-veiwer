@@ -36,6 +36,7 @@ interface SessionDetailProps {
   loading: boolean;
   modelLimits: Map<string, { context: number; output: number }>;
   onSelectSession?: (id: string) => void;
+  subagentMessages?: MessageWithParts[];
 }
 
 export function SessionDetail({
@@ -46,6 +47,7 @@ export function SessionDetail({
   loading,
   modelLimits,
   onSelectSession,
+  subagentMessages,
 }: SessionDetailProps) {
   // useMemo must be called before any early returns (rules of hooks)
   const activeTodos = useMemo(
@@ -151,7 +153,7 @@ export function SessionDetail({
 
         <Tabs.Panel value="info" style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex" }}>
           <ScrollArea p="md" style={{ flex: 1 }} offsetScrollbars>
-            <TokenSummary messages={messages} session={session} />
+            <TokenSummary messages={messages} session={session} subagentMessages={subagentMessages} />
           </ScrollArea>
         </Tabs.Panel>
 
