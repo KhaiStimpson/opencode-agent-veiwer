@@ -13,7 +13,7 @@ import { useEvents } from "./hooks/useEvents";
 import { useSessions } from "./hooks/useSessions";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useProviders } from "./hooks/useProviders";
-import { useDashboard } from "./hooks/useDashboard";
+import { useMultiServerDashboard } from "./hooks/useMultiServerDashboard";
 import { ConnectionHeader } from "./components/ConnectionHeader";
 import { SessionNav } from "./components/SessionNav";
 import { SessionDetail } from "./components/SessionDetail";
@@ -46,7 +46,7 @@ function getAllDescendantIds(node: SessionNode): string[] {
 
 function AppContent() {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(true);
-  const { activeClient, activeConnection } = useOpencode();
+  const { activeClient, activeConnection, servers } = useOpencode();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -68,7 +68,6 @@ function AppContent() {
   });
 
   const {
-    sessions,
     tree,
     statusMap,
     selectedId,
@@ -113,23 +112,20 @@ function AppContent() {
   // Provider/model metadata (context window limits)
   const { modelLimits } = useProviders(isConnected ? activeClient : null);
 
-  // Count active (busy) sessions — memoized to avoid recalculating on every render
-  const activeSessions = useMemo(
-    () => Object.values(statusMap).filter((s) => s.type === "busy").length,
-    [statusMap],
+  // Whether any server is connected — controls the Sessions/Dashboard toggle
+  const anyConnected = useMemo(
+    () => servers.some((s) => s.connection.status === "connected"),
+    [servers],
   );
 
-  // Dashboard hook
+  // Multi-server aggregated dashboard — fetches sessions + messages from every
+  // connected server and merges the stats into a single DashboardStats object
   const {
     stats: dashboardStats,
     loading: dashboardLoading,
     progress: dashboardProgress,
     refresh: refreshDashboard,
-  } = useDashboard(
-    isConnected && isDashboard ? activeClient : null,
-    isDashboard ? sessions : [],
-    activeSessions,
-  );
+  } = useMultiServerDashboard(servers, isDashboard && anyConnected);
 
   const handleViewChange = (value: string) => {
     navigate(value === "dashboard" ? "/dashboard" : "/");
@@ -160,7 +156,7 @@ function AppContent() {
             )}
             <ConnectionHeader />
           </Group>
-          {isConnected && (
+          {anyConnected && (
             <SegmentedControl
               size="xs"
               mr="xs"
@@ -200,7 +196,7 @@ function AppContent() {
             zIndex={1000}
             overlayProps={{ blur: 2 }}
           />
-          {isConnected ? (
+          {anyConnected ? (
             <Routes>
               <Route
                 path="/dashboard"
@@ -216,16 +212,23 @@ function AppContent() {
               <Route
                 path="*"
                 element={
-                  <SessionDetail
-                    session={selectedSession}
-                    status={selectedStatus}
-                    messages={messages}
-                    todos={todos}
-                    loading={detailLoading}
-                    modelLimits={modelLimits}
-                    onSelectSession={selectSession}
-                    subagentMessages={subagentMessages}
-                  />
+                  isConnected ? (
+                    <SessionDetail
+                      session={selectedSession}
+                      status={selectedStatus}
+                      messages={messages}
+                      todos={todos}
+                      loading={detailLoading}
+                      modelLimits={modelLimits}
+                      onSelectSession={selectSession}
+                      subagentMessages={subagentMessages}
+                    />
+                  ) : (
+                    <EmptyState
+                      title="No active server"
+                      description="Select a connected server from the dropdown to browse its sessions"
+                    />
+                  )
                 }
               />
             </Routes>

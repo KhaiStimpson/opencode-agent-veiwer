@@ -7,7 +7,7 @@ import { getModelPricing, estimateCostFromPricing } from "../lib/pricing";
 // Types
 // ---------------------------------------------------------------------------
 
-interface MessageWithParts {
+export interface MessageWithParts {
   info: Message;
   parts: Part[];
 }
@@ -103,7 +103,7 @@ function getDisplayName(modelID: string): string {
 // Aggregation
 // ---------------------------------------------------------------------------
 
-function aggregateStats(
+export function aggregateStats(
   sessions: Session[],
   allMessages: Map<string, MessageWithParts[]>,
   activeSessions: number,
