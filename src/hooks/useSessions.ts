@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { OpencodeClient } from "../lib/opencode";
+import { fetchAllSessions } from "../lib/opencode";
 import type {
   Session,
   SessionNode,
@@ -99,11 +100,11 @@ export function useSessions(
     if (!client) return null;
     try {
       const [sessRes, statusRes] = await Promise.all([
-        client.session.list(),
+        fetchAllSessions(client),
         client.session.status(),
       ]);
       return {
-        sessions: sessRes.data ?? [],
+        sessions: sessRes,
         statusMap: (statusRes.data ?? {}) as SessionStatusMap,
       };
     } catch {
