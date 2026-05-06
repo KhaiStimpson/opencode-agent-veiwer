@@ -3,6 +3,7 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   type ReactNode,
@@ -179,6 +180,15 @@ export function OpencodeProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  // Auto-connect all saved servers on mount so the multi-server dashboard
+  // can aggregate data from every repo without requiring manual reconnection
+  // on each page load.
+  useEffect(() => {
+    for (const server of storedRef.current) {
+      connectServer(server.id);
+    }
+  }, [connectServer]);
 
   const disconnectServer = useCallback((id: string) => {
     setServers((prev) =>
