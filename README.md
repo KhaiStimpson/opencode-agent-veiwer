@@ -43,6 +43,40 @@ Install dependencies:
 npm install
 ```
 
+### Option A — Automatic (recommended for multiple repos)
+
+Use the `serve-repos` script to start all your OpenCode servers in one command:
+
+```bash
+npm run serve-repos -- ~/work/project-a ~/work/project-b ~/work/project-c
+```
+
+The script assigns ports starting at `4096` (one per repo), prints the URLs to
+add to the viewer, and shuts everything down cleanly when you press Ctrl+C.
+
+You can also list your repos in an `opencode-repos.json` file at the root of
+this project and run the script without arguments:
+
+```json
+[
+  "~/work/project-a",
+  "~/work/project-b",
+  "~/work/project-c"
+]
+```
+
+```bash
+npm run serve-repos
+```
+
+Override the base port or viewer origin with environment variables if needed:
+
+```bash
+BASE_PORT=5000 VIEWER_ORIGIN=http://localhost:3000 npm run serve-repos -- ~/work/project-a
+```
+
+### Option B — Manual
+
 Start each OpenCode server with CORS enabled (one per project folder you want to monitor):
 
 ```bash
@@ -83,6 +117,7 @@ When two or more servers are saved, a trash icon appears next to the dropdown. C
 - `npm run build` - type-check and build for production
 - `npm run preview` - preview the production build locally
 - `npm run lint` - run ESLint
+- `npm run serve-repos -- <path> [path…]` - spawn `opencode serve` for one or more repo directories
 
 ## How It Works
 
