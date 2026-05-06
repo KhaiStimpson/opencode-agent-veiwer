@@ -43,6 +43,73 @@ Install dependencies:
 npm install
 ```
 
+### Option A — Auto-discover repos (recommended)
+
+Point `serve-repos` at a base directory and it will find every opencode repo
+inside it automatically — no need to list them one by one:
+
+```bash
+npm run serve-repos -- --scan ~/work
+```
+
+A directory is recognized as an opencode repo if it contains `.opencode/`,
+`opencode.json`, or `.opencode.json`. Only direct children of the scan
+directory are checked (depth 1).
+
+The script assigns ports starting at `4096` (one per repo), prints the URLs to
+add to the viewer, and shuts everything down cleanly when you press Ctrl+C.
+
+You can also put the scan directory in an `opencode-repos.json` config file at
+the root of this project and run the script without arguments:
+
+```json
+{
+  "scanDir": "~/work"
+}
+```
+
+```bash
+npm run serve-repos
+```
+
+Mix auto-discovery with a hand-picked list if you need repos from multiple
+places:
+
+```json
+{
+  "scanDir": "~/work",
+  "repos": ["/opt/special-project"]
+}
+```
+
+Override the base port or viewer origin with environment variables:
+
+```bash
+SCAN_DIR=~/work BASE_PORT=5000 VIEWER_ORIGIN=http://localhost:3000 npm run serve-repos
+```
+
+### Option B — Specify repos explicitly
+
+Pass individual repo paths as arguments:
+
+```bash
+npm run serve-repos -- ~/work/project-a ~/work/project-b ~/work/project-c
+```
+
+Or list them in `opencode-repos.json`:
+
+```json
+{
+  "repos": [
+    "~/work/project-a",
+    "~/work/project-b",
+    "~/work/project-c"
+  ]
+}
+```
+
+### Option C — Manual
+
 Start each OpenCode server with CORS enabled (one per project folder you want to monitor):
 
 ```bash
@@ -83,6 +150,7 @@ When two or more servers are saved, a trash icon appears next to the dropdown. C
 - `npm run build` - type-check and build for production
 - `npm run preview` - preview the production build locally
 - `npm run lint` - run ESLint
+- `npm run serve-repos -- <path> [path…]` - spawn `opencode serve` for one or more repo directories
 
 ## How It Works
 
