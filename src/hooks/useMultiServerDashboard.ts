@@ -8,6 +8,7 @@ import {
   type UseDashboardResult,
 } from "./useDashboard";
 import { type DateRange, isInDateRange } from "../lib/dateRange";
+import { fetchAllSessions } from "../lib/opencode";
 
 // How many sessions to fetch messages for concurrently per server
 const BATCH_SIZE = 5;
@@ -55,11 +56,10 @@ export function useMultiServerDashboard(
       const serverSessionPairs = await Promise.all(
         connectedServers.map(async (server) => {
           try {
-            const [sessRes, statusRes] = await Promise.all([
-              server.client!.session.list(),
+            const [sessions, statusRes] = await Promise.all([
+              fetchAllSessions(server.client!),
               server.client!.session.status(),
             ]);
-            const sessions = (sessRes.data ?? []) as Session[];
             const statusMap = (statusRes.data ?? {}) as Record<
               string,
               { type: string }

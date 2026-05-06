@@ -1,6 +1,46 @@
 import { createOpencodeClient } from "@opencode-ai/sdk";
+import type { Session } from "../types";
 
 export type OpencodeClient = ReturnType<typeof createOpencodeClient>;
+
+// Matches the server's default page size; used to detect when more pages exist.
+const SESSION_PAGE_SIZE = 100;
+
+/**
+ * Fetches all sessions by paginating through server pages.
+ * The OpenCode server defaults to 100 sessions per request; this helper
+ * transparently pages through using the `start` offset until all are retrieved.
+ * A de-duplication guard prevents infinite loops on servers that ignore `start`.
+ */
+export async function fetchAllSessions(client: OpencodeClient): Promise<Session[]> {
+  const all: Session[] = [];
+  const seenIds = new Set<string>();
+  let start = 0;
+
+  while (true) {
+    // The v1 SDK types only expose `directory` as a query param, but the
+    // underlying server also accepts `start` and `limit` for pagination.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (client.session.list as any)({ query: { limit: SESSION_PAGE_SIZE, start } });
+    const page = (res.data ?? []) as Session[];
+
+    let added = 0;
+    for (const session of page) {
+      if (!seenIds.has(session.id)) {
+        seenIds.add(session.id);
+        all.push(session);
+        added++;
+      }
+    }
+
+    // Stop if this was the last page, or if the server doesn't support `start`
+    // (it returned only already-seen sessions, meaning no real pagination).
+    if (page.length < SESSION_PAGE_SIZE || added === 0) break;
+    start += SESSION_PAGE_SIZE;
+  }
+
+  return all;
+}
 
 export function createClient(baseUrl: string): OpencodeClient {
   return createOpencodeClient({ baseUrl });
