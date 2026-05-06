@@ -1,4 +1,5 @@
 import "@mantine/charts/styles.css";
+import "@mantine/dates/styles.css";
 
 import {
   Stack,
@@ -14,7 +15,10 @@ import {
   Button,
   Center,
   Loader,
+  SegmentedControl,
+  Popover,
 } from "@mantine/core";
+import { DatePickerInput } from "@mantine/dates";
 import { BarChart, DonutChart, AreaChart } from "@mantine/charts";
 import {
   Lightning,
@@ -29,10 +33,16 @@ import {
   CodeBlock,
   ArrowClockwise,
   Pulse,
+  CalendarBlank,
 } from "@phosphor-icons/react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { formatTokens, formatCost } from "../lib/opencode";
 import { StatCard } from "./StatCard";
+import {
+  getPresetRange,
+  type DateRange,
+  type DateRangePreset,
+} from "../lib/dateRange";
 import type { DashboardStats } from "../hooks/useDashboard";
 
 interface DashboardProps {
@@ -40,6 +50,8 @@ interface DashboardProps {
   loading: boolean;
   progress: { done: number; total: number };
   onRefresh: () => void;
+  dateRange: DateRange;
+  onDateRangeChange: (range: DateRange) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,9 +109,17 @@ function formatDate(dateStr: string): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export function Dashboard({ stats, loading, progress, onRefresh }: DashboardProps) {
+export function Dashboard({ stats, loading, progress, onRefresh, dateRange, onDateRangeChange }: DashboardProps) {
   // All useMemo calls must be before any early returns (rules of hooks).
   // When stats is null, provide empty/zero defaults.
+
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customStart, setCustomStart] = useState<string | null>(
+    dateRange.start ? dateRange.start.toISOString().slice(0, 10) : null,
+  );
+  const [customEnd, setCustomEnd] = useState<string | null>(
+    dateRange.end ? dateRange.end.toISOString().slice(0, 10) : null,
+  );
 
   const modelDonutData = useMemo(
     () =>
@@ -165,6 +185,28 @@ export function Dashboard({ stats, loading, progress, onRefresh }: DashboardProp
     [stats],
   );
 
+  const handlePresetChange = (value: string) => {
+    if (value === "custom") {
+      // Switch to custom mode with current dates and open the picker
+      const start = customStart ? new Date(customStart + "T00:00:00") : dateRange.start;
+      const end = customEnd ? new Date(customEnd + "T23:59:59.999") : dateRange.end;
+      onDateRangeChange({ preset: "custom", start, end });
+      setCustomOpen(true);
+      return;
+    }
+    const preset = value as Exclude<DateRangePreset, "custom">;
+    onDateRangeChange(getPresetRange(preset));
+  };
+
+  const handleCustomApply = () => {
+    if (customStart && customEnd) {
+      const start = new Date(customStart + "T00:00:00");
+      const end = new Date(customEnd + "T23:59:59.999");
+      onDateRangeChange({ preset: "custom", start, end });
+      setCustomOpen(false);
+    }
+  };
+
   if (loading && !stats) {
     return (
       <Center h="100%" p="xl">
@@ -212,15 +254,95 @@ export function Dashboard({ stats, loading, progress, onRefresh }: DashboardProp
             </Text>
             {loading && <Loader size="xs" />}
           </Group>
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<ArrowClockwise size={14} />}
-            onClick={onRefresh}
-            loading={loading}
-          >
-            Refresh
-          </Button>
+          <Group gap="xs" wrap="nowrap">
+            {/* Date range selector */}
+            <SegmentedControl
+              size="xs"
+              value={dateRange.preset}
+              onChange={handlePresetChange}
+              data={[
+                { label: "Last 30 days", value: "last30days" },
+                { label: "This month", value: "thisMonth" },
+                { label: "Last month", value: "lastMonth" },
+                { label: "Custom", value: "custom" },
+              ]}
+            />
+            {/* Custom date range popover — only shown when custom preset is active */}
+            {dateRange.preset === "custom" && (
+              <Popover
+                opened={customOpen}
+                onClose={() => setCustomOpen(false)}
+                position="bottom-end"
+                withArrow
+                shadow="md"
+              >
+                <Popover.Target>
+                  <Button
+                    size="xs"
+                    variant="light"
+                    leftSection={<CalendarBlank size={14} />}
+                    onClick={() => setCustomOpen((o) => !o)}
+                  >
+                    {dateRange.start && dateRange.end
+                      ? `${dateRange.start.toLocaleDateString()} – ${dateRange.end.toLocaleDateString()}`
+                      : "Pick dates"}
+                  </Button>
+                </Popover.Target>
+                <Popover.Dropdown>
+                  <Stack gap="sm">
+                    <Text size="sm" fw={600}>Custom date range</Text>
+                    <Group gap="sm" align="flex-end">
+                      <DatePickerInput
+                        label="From"
+                        placeholder="Start date"
+                        value={customStart}
+                        onChange={setCustomStart}
+                        maxDate={customEnd ?? undefined}
+                        size="xs"
+                        style={{ width: 150 }}
+                        leftSection={<CalendarBlank size={14} />}
+                      />
+                      <DatePickerInput
+                        label="To"
+                        placeholder="End date"
+                        value={customEnd}
+                        onChange={setCustomEnd}
+                        minDate={customStart ?? undefined}
+                        size="xs"
+                        style={{ width: 150 }}
+                        leftSection={<CalendarBlank size={14} />}
+                      />
+                    </Group>
+                    <Group justify="flex-end" gap="xs">
+                      <Button
+                        size="xs"
+                        variant="default"
+                        onClick={() => setCustomOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="xs"
+                        disabled={!customStart || !customEnd}
+                        onClick={handleCustomApply}
+                      >
+                        Apply
+                      </Button>
+                    </Group>
+                  </Stack>
+                </Popover.Dropdown>
+              </Popover>
+            )}
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<ArrowClockwise size={14} />}
+              onClick={onRefresh}
+              loading={loading}
+            >
+              Refresh
+            </Button>
+          </Group>
         </Group>
 
         {/* ================================================================ */}
