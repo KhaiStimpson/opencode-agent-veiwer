@@ -35,7 +35,7 @@ import {
   Pulse,
   CalendarBlank,
 } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { formatTokens, formatCost } from "../lib/opencode";
 import { StatCard } from "./StatCard";
 import {
@@ -120,6 +120,14 @@ export function Dashboard({ stats, loading, progress, onRefresh, dateRange, onDa
   const [customEnd, setCustomEnd] = useState<string | null>(
     dateRange.end ? dateRange.end.toISOString().slice(0, 10) : null,
   );
+
+  // Keep local custom date inputs in sync with the controlled dateRange prop
+  useEffect(() => {
+    if (dateRange.preset === "custom") {
+      setCustomStart(dateRange.start ? dateRange.start.toISOString().slice(0, 10) : null);
+      setCustomEnd(dateRange.end ? dateRange.end.toISOString().slice(0, 10) : null);
+    }
+  }, [dateRange]);
 
   const modelDonutData = useMemo(
     () =>
