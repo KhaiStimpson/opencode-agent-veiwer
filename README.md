@@ -4,18 +4,19 @@
 
 Read-only web UI for monitoring OpenCode sessions and subagents in real time.
 
-It connects directly from the browser to a running OpenCode server with `@opencode-ai/sdk`, shows the session tree in a sidebar, and renders messages, todos, token usage, cost, and premium-request estimates in the main panel.
+It connects directly from the browser to one or more running OpenCode servers using `@opencode-ai/sdk`, shows the session tree for the selected server in a sidebar, and renders messages, todos, token usage, cost, and premium-request estimates in the main panel.
 
 ## Features
 
-- Live session tree with parent/child subagent nesting
+- **Multi-server support** — save multiple OpenCode server URLs and switch between them instantly; each has its own connection status dot (green/yellow/red/grey)
+- Live session tree with parent/child subagent nesting for the active server
 - Message stream viewer with auto-scroll to the latest output
 - Polling fallback so active sessions still update if SSE is unreliable
 - Todo tracking for the selected session
 - Token and cost summary in the Info tab
 - Premium request estimator with per-model breakdown and compaction counts
 - Direct browser connection, no backend proxy
-- Dashboard with workspace-wide stats and charts (cost, tokens, model usage, tools, activity over time)
+- **Aggregated dashboard** — cost, tokens, model usage, tool stats, and activity charts merged across **all** connected servers at once
 
 ## Tech Stack
 
@@ -32,7 +33,7 @@ It connects directly from the browser to a running OpenCode server with `@openco
 ## Requirements
 
 - Node.js 20+
-- A running OpenCode server with CORS enabled for the Vite dev origin
+- One or more running OpenCode servers with CORS enabled for the Vite dev origin
 
 ## Getting Started
 
@@ -42,10 +43,16 @@ Install dependencies:
 npm install
 ```
 
-Start the OpenCode server with CORS enabled:
+Start each OpenCode server with CORS enabled (one per project folder you want to monitor):
 
 ```bash
+# project 1
+cd ~/work/project-a
 opencode serve --cors http://localhost:5173
+
+# project 2 (in another terminal, different port)
+cd ~/work/project-b
+opencode serve --port 4097 --cors http://localhost:5173
 ```
 
 Start the dev server:
@@ -54,11 +61,21 @@ Start the dev server:
 npm run dev
 ```
 
-Open `http://localhost:5173`, enter the OpenCode server URL if needed, and connect.
+Open `http://localhost:5173`. The first saved server URL is `http://localhost:4096`.
 
-The default server URL in the app is `http://localhost:4096`.
+### Adding more servers
 
-Tip: after connecting you can switch to the Dashboard view using the Sessions/Dashboard toggle in the header (top-right), or navigate directly to `/dashboard`.
+1. Click the **+** button next to the server dropdown in the header.
+2. Type the URL of the other OpenCode server (e.g. `http://localhost:4097`).
+3. Click **Add** — the server is saved, set as active, and auto-connected.
+4. Use the dropdown to switch between servers for the Sessions view.
+5. Open the **Dashboard** view (Sessions/Dashboard toggle, top-right) to see aggregated stats across **all** connected servers simultaneously.
+
+The server list is persisted to `localStorage` so it survives page reloads. The active server and connection states are restored automatically.
+
+### Removing a server
+
+When two or more servers are saved, a trash icon appears next to the dropdown. Click it to remove the currently selected server.
 
 ## Scripts
 
@@ -69,15 +86,12 @@ Tip: after connecting you can switch to the Dashboard view using the Sessions/Da
 
 ## How It Works
 
-- The browser creates an SDK client with `createOpencodeClient({ baseUrl })`
-- Connection health is checked with `fetch(<baseUrl>/global/health)`
-- Session lists and details are loaded from the SDK:
-  - `session.list()`
-  - `session.status()`
-  - `session.messages({ path: { id } })`
-  - `session.todo({ path: { id } })`
-- Real-time updates use `event.subscribe()`
-- The selected session also refreshes on a short polling interval as a fallback
+- Each server entry stores its own `createOpencodeClient({ baseUrl })` instance
+- Connection health is verified with `fetch(<baseUrl>/global/health)` before the SDK client is created
+- The **Sessions view** operates on the currently selected (active) server:
+  - `session.list()`, `session.status()`, `session.messages({ path: { id } })`, `session.todo({ path: { id } })`
+  - Real-time updates via `event.subscribe()`
+- The **Dashboard view** fetches sessions and messages from every connected server in parallel, then merges all the data into a single aggregated `DashboardStats` object
 
 ## Browser / SDK Notes
 
@@ -132,7 +146,6 @@ Reference:
 - Read-only viewer; it cannot send prompts or control sessions
 - Premium request counts are estimated, not guaranteed billing truth
 - Unknown models fall back to a `1x` multiplier in the estimator
-- The UI is optimized for local development against a local OpenCode server
 - Dashboard includes client-side charts (recharts) which increase the bundle size; you may see a chunk-size warning during build
 
 ## Project Structure
@@ -141,26 +154,29 @@ Reference:
 src/
   components/
     ConnectionHeader.tsx
+    Dashboard.tsx
     EmptyState.tsx
     MessageItem.tsx
     MessageList.tsx
     SessionDetail.tsx
     SessionNav.tsx
     SessionNavItem.tsx
+    StatCard.tsx
     StatusBadge.tsx
     TodoList.tsx
     TokenSummary.tsx
     ToolCallPart.tsx
-    Dashboard.tsx
-    StatCard.tsx
   hooks/
     useEvents.ts
-    useOpencode.tsx
+    useMultiServerDashboard.ts   ← aggregates stats across all connected servers
+    useOpencode.tsx              ← manages the list of server connections
+    useProviders.ts
     useSessionDetail.ts
     useSessions.ts
     useDashboard.ts
   lib/
     opencode.ts
+    pricing.ts
   types/
     index.ts
   App.tsx
@@ -173,7 +189,7 @@ src/
 
 If the page is blank or gray:
 
-- make sure the OpenCode server is running
+- make sure at least one OpenCode server is running
 - make sure it was started with `--cors http://localhost:5173`
 - restart `npm run dev` after SDK or Vite config changes
 - check the browser console for connection or SSE errors
@@ -184,6 +200,12 @@ If sessions appear but live updates stall:
 - check for `[SSE]` logs in the browser console
 - verify the selected server URL matches the OpenCode server origin
 
+If the Dashboard shows data for only some servers:
+
+- check that each server's status dot in the dropdown is green (connected)
+- servers that are disconnected or errored are skipped during dashboard aggregation
+- click the **Refresh** button in the Dashboard toolbar to clear the message cache and re-fetch
+
 ## Status
 
 The app builds successfully with:
@@ -191,3 +213,4 @@ The app builds successfully with:
 ```bash
 npm run build
 ```
+

@@ -13,7 +13,7 @@ import { useEvents } from "./hooks/useEvents";
 import { useSessions } from "./hooks/useSessions";
 import { useSessionDetail } from "./hooks/useSessionDetail";
 import { useProviders } from "./hooks/useProviders";
-import { useDashboard } from "./hooks/useDashboard";
+import { useMultiServerDashboard } from "./hooks/useMultiServerDashboard";
 import { ConnectionHeader } from "./components/ConnectionHeader";
 import { SessionNav } from "./components/SessionNav";
 import { SessionDetail } from "./components/SessionDetail";
@@ -46,13 +46,13 @@ function getAllDescendantIds(node: SessionNode): string[] {
 
 function AppContent() {
   const [navOpened, { toggle: toggleNav }] = useDisclosure(true);
-  const { client, connection, connect, disconnect } = useOpencode();
+  const { activeClient, activeConnection, servers } = useOpencode();
   const navigate = useNavigate();
   const location = useLocation();
 
   const isDashboard = location.pathname === "/dashboard";
 
-  const isConnected = connection.status === "connected";
+  const isConnected = activeConnection?.status === "connected";
 
   // SSE event stream — called early so sseConnected is available for polling hooks.
   // useEvents uses a ref internally for onEvent, so the callback can be updated below.
@@ -62,20 +62,19 @@ function AppContent() {
     [],
   );
   const { sseConnected } = useEvents({
-    client: isConnected ? client : null,
+    client: isConnected ? activeClient : null,
     onEvent: stableOnEvent,
     enabled: isConnected,
   });
 
   const {
-    sessions,
     tree,
     statusMap,
     selectedId,
     selectSession,
     loading: sessionsLoading,
     handleEvent: handleSessionEvent,
-  } = useSessions(isConnected ? client : null, sseConnected);
+  } = useSessions(isConnected ? activeClient : null, sseConnected);
 
   // Find selected session object — memoized to avoid recursive search on every render
   const selectedNode = useMemo(
@@ -100,7 +99,7 @@ function AppContent() {
     loading: detailLoading,
     handleEvent: handleDetailEvent,
     subagentMessages,
-  } = useSessionDetail(isConnected ? client : null, selectedId, sseConnected, childSessionIds);
+  } = useSessionDetail(isConnected ? activeClient : null, selectedId, sseConnected, childSessionIds);
 
   // Keep the event handler ref in sync with the latest handlers
   useEffect(() => {
@@ -111,25 +110,22 @@ function AppContent() {
   });
 
   // Provider/model metadata (context window limits)
-  const { modelLimits } = useProviders(isConnected ? client : null);
+  const { modelLimits } = useProviders(isConnected ? activeClient : null);
 
-  // Count active (busy) sessions — memoized to avoid recalculating on every render
-  const activeSessions = useMemo(
-    () => Object.values(statusMap).filter((s) => s.type === "busy").length,
-    [statusMap],
+  // Whether any server is connected — controls the Sessions/Dashboard toggle
+  const anyConnected = useMemo(
+    () => servers.some((s) => s.connection.status === "connected"),
+    [servers],
   );
 
-  // Dashboard hook
+  // Multi-server aggregated dashboard — fetches sessions + messages from every
+  // connected server and merges the stats into a single DashboardStats object
   const {
     stats: dashboardStats,
     loading: dashboardLoading,
     progress: dashboardProgress,
     refresh: refreshDashboard,
-  } = useDashboard(
-    isConnected && isDashboard ? client : null,
-    isDashboard ? sessions : [],
-    activeSessions,
-  );
+  } = useMultiServerDashboard(servers, isDashboard && anyConnected);
 
   const handleViewChange = (value: string) => {
     navigate(value === "dashboard" ? "/dashboard" : "/");
@@ -158,13 +154,9 @@ function AppContent() {
                 size="sm"
               />
             )}
-            <ConnectionHeader
-              connection={connection}
-              onConnect={connect}
-              onDisconnect={disconnect}
-            />
+            <ConnectionHeader />
           </Group>
-          {isConnected && (
+          {anyConnected && (
             <SegmentedControl
               size="xs"
               mr="xs"
@@ -200,11 +192,11 @@ function AppContent() {
       >
         <div style={{ flex: 1, position: "relative", overflow: "hidden", height: "100%" }}>
           <LoadingOverlay
-            visible={connection.status === "connecting"}
+            visible={activeConnection?.status === "connecting"}
             zIndex={1000}
             overlayProps={{ blur: 2 }}
           />
-          {isConnected ? (
+          {anyConnected ? (
             <Routes>
               <Route
                 path="/dashboard"
@@ -220,16 +212,23 @@ function AppContent() {
               <Route
                 path="*"
                 element={
-                  <SessionDetail
-                    session={selectedSession}
-                    status={selectedStatus}
-                    messages={messages}
-                    todos={todos}
-                    loading={detailLoading}
-                    modelLimits={modelLimits}
-                    onSelectSession={selectSession}
-                    subagentMessages={subagentMessages}
-                  />
+                  isConnected ? (
+                    <SessionDetail
+                      session={selectedSession}
+                      status={selectedStatus}
+                      messages={messages}
+                      todos={todos}
+                      loading={detailLoading}
+                      modelLimits={modelLimits}
+                      onSelectSession={selectSession}
+                      subagentMessages={subagentMessages}
+                    />
+                  ) : (
+                    <EmptyState
+                      title="No active server"
+                      description="Select a connected server from the dropdown to browse its sessions"
+                    />
+                  )
                 }
               />
             </Routes>
