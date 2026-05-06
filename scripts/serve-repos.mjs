@@ -7,22 +7,39 @@
  *
  * Usage
  * -----
- *   # Pass paths directly:
+ *   # Auto-discover all opencode repos under a base directory:
+ *   npm run serve-repos -- --scan ~/work
+ *
+ *   # Pass specific paths directly:
  *   npm run serve-repos -- /path/to/repo-a /path/to/repo-b
  *
- *   # Or list them in opencode-repos.json (array of path strings):
+ *   # Or configure in opencode-repos.json:
+ *   {
+ *     "scanDir": "~/work",          ← scan a base directory automatically
+ *     "repos": ["/extra/repo"]      ← also include specific paths
+ *   }
  *   npm run serve-repos
+ *
+ * Auto-discovery
+ * ──────────────
+ * A directory is recognized as an opencode repo if it contains any of:
+ *   .opencode/          (config directory)
+ *   opencode.json       (config file)
+ *   .opencode.json      (hidden config file)
+ *
+ * Only direct children of the scan directory are checked (depth 1).
  *
  * Each repo gets its own port starting at BASE_PORT (default 4096).
  * The viewer origin (--cors flag) defaults to http://localhost:5173.
  *
  * Override via environment variables:
- *   BASE_PORT=5000 VIEWER_ORIGIN=http://localhost:3000 npm run serve-repos -- /path/to/repo
+ *   SCAN_DIR=~/work BASE_PORT=5000 VIEWER_ORIGIN=http://localhost:3000 npm run serve-repos
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve, basename } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { resolve, basename, join } from "node:path";
+import { homedir } from "node:os";
 
 const BASE_PORT = parseInt(process.env.BASE_PORT ?? "4096", 10);
 if (isNaN(BASE_PORT) || BASE_PORT < 1 || BASE_PORT > 65535) {
@@ -32,11 +49,74 @@ if (isNaN(BASE_PORT) || BASE_PORT < 1 || BASE_PORT > 65535) {
 const VIEWER_ORIGIN = process.env.VIEWER_ORIGIN ?? "http://localhost:5173";
 const CONFIG_FILE = "opencode-repos.json";
 
+/** Expand a leading ~ to the user's home directory. */
+function expandHome(p) {
+  if (p.startsWith("~/") || p === "~") {
+    return join(homedir(), p.slice(1));
+  }
+  return p;
+}
+
+/** Opencode presence markers we look for in a candidate directory. */
+const OPENCODE_MARKERS = [".opencode", "opencode.json", ".opencode.json"];
+
+/** Return true if `dir` looks like an opencode project. */
+function isOpencodeRepo(dir) {
+  return OPENCODE_MARKERS.some((marker) => existsSync(join(dir, marker)));
+}
+
+/**
+ * Walk one level of `baseDir` and return every immediate child directory
+ * that contains an opencode config marker.
+ */
+function discoverRepos(baseDir) {
+  const abs = resolve(expandHome(baseDir));
+  if (!existsSync(abs)) {
+    console.warn(`[serve-repos] Scan directory not found: ${abs}`);
+    return [];
+  }
+
+  let entries;
+  try {
+    entries = readdirSync(abs);
+  } catch (err) {
+    console.error(`[serve-repos] Cannot read scan directory ${abs}:`, err.message);
+    return [];
+  }
+
+  const found = [];
+  for (const entry of entries) {
+    const full = join(abs, entry);
+    try {
+      if (statSync(full).isDirectory() && isOpencodeRepo(full)) {
+        found.push(full);
+      }
+    } catch {
+      // skip entries we can't stat
+    }
+  }
+  return found;
+}
+
 // ── Resolve repo paths ────────────────────────────────────────────────────────
 
-let repoPaths = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
 
-if (repoPaths.length === 0) {
+// Pull --scan <dir> from CLI args
+let scanDir = process.env.SCAN_DIR ?? null;
+const explicitPaths = [];
+
+for (let i = 0; i < rawArgs.length; i++) {
+  if (rawArgs[i] === "--scan" && rawArgs[i + 1]) {
+    scanDir = rawArgs[++i];
+  } else {
+    explicitPaths.push(rawArgs[i]);
+  }
+}
+
+let repoPaths = [...explicitPaths];
+
+if (repoPaths.length === 0 && !scanDir) {
   // Fall back to config file in the current working directory
   const configPath = resolve(process.cwd(), CONFIG_FILE);
   if (existsSync(configPath)) {
@@ -45,8 +125,11 @@ if (repoPaths.length === 0) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         repoPaths = parsed.map((p) => String(p));
-      } else if (parsed.repos && Array.isArray(parsed.repos)) {
-        repoPaths = parsed.repos.map((p) => String(p));
+      } else {
+        if (parsed.scanDir) scanDir = String(parsed.scanDir);
+        if (parsed.repos && Array.isArray(parsed.repos)) {
+          repoPaths = parsed.repos.map((p) => String(p));
+        }
       }
     } catch (err) {
       console.error(`[serve-repos] Failed to parse ${CONFIG_FILE}:`, err.message);
@@ -55,11 +138,35 @@ if (repoPaths.length === 0) {
   }
 }
 
+// Auto-discover repos from the scan directory and merge with explicit list
+if (scanDir) {
+  console.log(`[serve-repos] Scanning for opencode repos in: ${resolve(expandHome(scanDir))}`);
+  const discovered = discoverRepos(scanDir);
+  if (discovered.length === 0) {
+    console.warn(
+      `[serve-repos] No opencode repos found under ${scanDir}.\n` +
+        `  A directory is recognized as an opencode repo if it contains\n` +
+        `  .opencode/, opencode.json, or .opencode.json.`,
+    );
+  } else {
+    console.log(`[serve-repos] Found ${discovered.length} repo(s) via scan.`);
+  }
+  // Merge discovered paths, deduplicating against explicit ones
+  const seen = new Set(repoPaths.map((p) => resolve(expandHome(p))));
+  for (const d of discovered) {
+    if (!seen.has(d)) {
+      repoPaths.push(d);
+      seen.add(d);
+    }
+  }
+}
+
 if (repoPaths.length === 0) {
   console.error(
     `[serve-repos] No repo paths provided.\n` +
-      `  Pass paths as arguments:  npm run serve-repos -- /path/to/repo-a /path/to/repo-b\n` +
-      `  Or create ${CONFIG_FILE} with an array of paths.`,
+      `  Auto-discover:  npm run serve-repos -- --scan ~/work\n` +
+      `  Explicit paths: npm run serve-repos -- /path/to/repo-a /path/to/repo-b\n` +
+      `  Or create ${CONFIG_FILE} with a "scanDir" or "repos" key.`,
   );
   process.exit(1);
 }
@@ -69,7 +176,7 @@ if (repoPaths.length === 0) {
 const children = [];
 
 for (let i = 0; i < repoPaths.length; i++) {
-  const dir = resolve(repoPaths[i]);
+  const dir = resolve(expandHome(repoPaths[i]));
   const port = BASE_PORT + i;
   const label = basename(dir);
 
