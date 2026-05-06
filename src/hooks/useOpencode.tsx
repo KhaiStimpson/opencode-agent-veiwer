@@ -66,9 +66,13 @@ function loadInitialServers(): StoredServer[] {
     }
   } catch { /* storage unavailable */ }
 
-  // Default
+  // Default — persist so the server survives a page reload
   const id = generateId();
-  return [{ id, url: DEFAULT_URL, label: DEFAULT_URL }];
+  const defaultServers = [{ id, url: DEFAULT_URL, label: DEFAULT_URL }];
+  try {
+    localStorage.setItem(SERVERS_STORAGE_KEY, JSON.stringify(defaultServers));
+  } catch { /* storage unavailable */ }
+  return defaultServers;
 }
 
 function loadInitialActiveId(servers: StoredServer[]): string | null {
@@ -211,14 +215,15 @@ export function OpencodeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeServer = useCallback((id: string) => {
-    setServers((prev) => {
-      const next = prev.filter((s) => s.id !== id);
-      saveServers(next.map((s) => ({ id: s.id, url: s.url, label: s.label })));
-      return next;
+    // Compute the remaining list once from the latest ref so both state
+    // updates agree on which server becomes active next.
+    const remaining = serversRef.current.filter((s) => s.id !== id);
+    setServers(() => {
+      saveServers(remaining.map((s) => ({ id: s.id, url: s.url, label: s.label })));
+      return remaining;
     });
     setActiveServerIdState((prev) => {
       if (prev !== id) return prev;
-      const remaining = serversRef.current.filter((s) => s.id !== id);
       const newActive = remaining[0]?.id ?? null;
       saveActiveId(newActive);
       return newActive;
