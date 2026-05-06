@@ -43,6 +43,9 @@ interface OpencodeContextValue {
 const OpencodeContext = createContext<OpencodeContextValue | null>(null);
 
 function generateId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
   return Math.random().toString(36).slice(2, 10);
 }
 
@@ -218,10 +221,8 @@ export function OpencodeProvider({ children }: { children: ReactNode }) {
     // Compute the remaining list once from the latest ref so both state
     // updates agree on which server becomes active next.
     const remaining = serversRef.current.filter((s) => s.id !== id);
-    setServers(() => {
-      saveServers(remaining.map((s) => ({ id: s.id, url: s.url, label: s.label })));
-      return remaining;
-    });
+    setServers(remaining);
+    saveServers(remaining.map((s) => ({ id: s.id, url: s.url, label: s.label })));
     setActiveServerIdState((prev) => {
       if (prev !== id) return prev;
       const newActive = remaining[0]?.id ?? null;
