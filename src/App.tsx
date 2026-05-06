@@ -6,7 +6,7 @@ import {
   SegmentedControl,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { useCallback, useMemo, useRef, useEffect } from "react";
+import { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router";
 import { OpencodeProvider, useOpencode } from "./hooks/useOpencode";
 import { useEvents } from "./hooks/useEvents";
@@ -19,7 +19,9 @@ import { SessionNav } from "./components/SessionNav";
 import { SessionDetail } from "./components/SessionDetail";
 import { Dashboard } from "./components/Dashboard";
 import { EmptyState } from "./components/EmptyState";
+import { defaultDateRange } from "./lib/dateRange";
 import type { Event, SessionStatus, SessionNode } from "./types";
+import type { DateRange } from "./lib/dateRange";
 
 /** Recursively find a session node by ID */
 function findSession(
@@ -112,6 +114,9 @@ function AppContent() {
   // Provider/model metadata (context window limits)
   const { modelLimits } = useProviders(isConnected ? activeClient : null);
 
+  // Date range filter for the dashboard
+  const [dateRange, setDateRange] = useState<DateRange>(defaultDateRange);
+
   // Whether any server is connected — controls the Sessions/Dashboard toggle
   const anyConnected = useMemo(
     () => servers.some((s) => s.connection.status === "connected"),
@@ -125,7 +130,7 @@ function AppContent() {
     loading: dashboardLoading,
     progress: dashboardProgress,
     refresh: refreshDashboard,
-  } = useMultiServerDashboard(servers, isDashboard && anyConnected);
+  } = useMultiServerDashboard(servers, isDashboard && anyConnected, dateRange);
 
   const handleViewChange = (value: string) => {
     navigate(value === "dashboard" ? "/dashboard" : "/");
@@ -206,6 +211,8 @@ function AppContent() {
                     loading={dashboardLoading}
                     progress={dashboardProgress}
                     onRefresh={refreshDashboard}
+                    dateRange={dateRange}
+                    onDateRangeChange={setDateRange}
                   />
                 }
               />

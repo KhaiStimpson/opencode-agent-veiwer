@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { ServerEntry } from "./useOpencode";
 import type { Session } from "../types";
 import {
@@ -7,6 +7,7 @@ import {
   type MessageWithParts,
   type UseDashboardResult,
 } from "./useDashboard";
+import { type DateRange, isInDateRange } from "../lib/dateRange";
 
 // How many sessions to fetch messages for concurrently per server
 const BATCH_SIZE = 5;
@@ -22,8 +23,8 @@ function cacheKey(serverId: string, sessionId: string): string {
 export function useMultiServerDashboard(
   servers: ServerEntry[],
   enabled: boolean,
+  dateRange: DateRange,
 ): UseDashboardResult {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
 
@@ -31,6 +32,13 @@ export function useMultiServerDashboard(
   const cacheRef = useRef(new Map<string, MessageWithParts[]>());
   const fetchingRef = useRef(false);
   const [fetchTrigger, setFetchTrigger] = useState(0);
+
+  // Raw fetched data — re-aggregated whenever dateRange changes without refetching
+  const [rawData, setRawData] = useState<{
+    sessions: Session[];
+    messages: Map<string, MessageWithParts[]>;
+    activeSessions: number;
+  } | null>(null);
 
   // Snapshot of connected servers for use inside async effects without stale closures
   const connectedServers = servers.filter((s) => s.client !== null);
@@ -122,21 +130,33 @@ export function useMultiServerDashboard(
         return;
       }
 
-      // Step 4 — build flat sessions + messages map and aggregate
+      // Step 4 — store raw data (full unfiltered set); aggregation is derived via useMemo
       const flatSessions = allSessionPairs.map((p) => p.session);
       const allMessages = new Map<string, MessageWithParts[]>();
       for (const { serverId, session } of allSessionPairs) {
         allMessages.set(session.id, cache.get(cacheKey(serverId, session.id)) ?? []);
       }
 
-      const result = aggregateStats(flatSessions, allMessages, totalActiveSessions);
-      setStats(result);
+      setRawData({ sessions: flatSessions, messages: allMessages, activeSessions: totalActiveSessions });
       setLoading(false);
       fetchingRef.current = false;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [connectedServers.map((s) => s.id).join(","), fetchTrigger],
   );
+
+  // Derive stats from raw data + current date range (no network call on range change)
+  const filteredStats = useMemo((): DashboardStats | null => {
+    if (!rawData) return null;
+    const filtered = rawData.sessions.filter((s) =>
+      isInDateRange(s.time.created, dateRange),
+    );
+    const filteredMessages = new Map<string, MessageWithParts[]>();
+    for (const s of filtered) {
+      filteredMessages.set(s.id, rawData.messages.get(s.id) ?? []);
+    }
+    return aggregateStats(filtered, filteredMessages, rawData.activeSessions);
+  }, [rawData, dateRange]);
 
   // Main effect: fetch on mount / server change / trigger, then re-poll
   useEffect(() => {
@@ -165,5 +185,5 @@ export function useMultiServerDashboard(
     setFetchTrigger((c) => c + 1);
   }, []);
 
-  return { stats, loading, progress, refresh };
+  return { stats: filteredStats, loading, progress, refresh };
 }
