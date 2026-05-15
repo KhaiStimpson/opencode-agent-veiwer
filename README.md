@@ -6,6 +6,14 @@ Read-only web UI for monitoring OpenCode sessions and subagents in real time.
 
 It connects directly from the browser to one or more running OpenCode servers using `@opencode-ai/sdk`, shows the session tree for the selected server in a sidebar, and renders messages, todos, token usage, cost, and premium-request estimates in the main panel.
 
+## Screenshots
+
+### Session View
+![Session view — messages, tool calls, and session tree](https://github.com/user-attachments/assets/2c47d1e9-d592-462e-9389-c58da6698c93)
+
+### Dashboard
+![Dashboard — cost, tokens, model usage, tools, and activity over time](https://github.com/user-attachments/assets/8554ef88-aeea-4f96-9259-fb4cc34c1a16)
+
 ## Features
 
 - **Multi-server support** — save multiple OpenCode server URLs and switch between them instantly; each has its own connection status dot (green/yellow/red/grey)
